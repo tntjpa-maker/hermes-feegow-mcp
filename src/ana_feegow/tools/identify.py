@@ -13,16 +13,20 @@ def identificar_paciente(
 
     resultado = client.get(
         "/patient/list",
-        params={"celular": telefone}
+        params={
+            "telefone": telefone,
+            "limit": 1,
+            "offset": 0,
+        },
     )
 
     if resultado.get("total", 0) > 0:
         return {
             "existe": True,
-            "paciente": resultado["content"][0]
+            "paciente": resultado["content"][0],
         }
 
     return {
         "existe": False,
-        "paciente": None
+        "paciente": None,
     }
