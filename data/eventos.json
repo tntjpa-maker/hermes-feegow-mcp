@@ -1,0 +1,19 @@
+[
+  {
+    "timestamp": "2026-07-07T17:28:04.262305",
+    "agendamento_id": 31,
+    "tipo": "reserva_criada",
+    "dados": {
+      "paciente_id": 68,
+      "status": 208
+    }
+  },
+  {
+    "timestamp": "2026-07-07T17:33:53.504319",
+    "agendamento_id": 31,
+    "tipo": "consulta_remarcada",
+    "dados": {
+      "novo_agendamento": 32
+    }
+  }
+]

@@ -6,5 +6,5 @@ client = FeegowClient()
 def criar_agendamento(dados):
     return client.post(
         "/appoints/new-appoint",
-        dados,
+        dados
     )
