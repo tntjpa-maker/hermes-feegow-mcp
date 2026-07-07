@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+src/ana_feegow/__init__.py
+src/ana_feegow/client.py
+src/ana_feegow/config.py
+src/ana_feegow/errors.py
+src/ana_feegow.egg-info/PKG-INFO
+src/ana_feegow.egg-info/SOURCES.txt
+src/ana_feegow.egg-info/dependency_links.txt
+src/ana_feegow.egg-info/requires.txt
+src/ana_feegow.egg-info/top_level.txt
+src/ana_feegow/tools/__init__.py
+src/ana_feegow/tools/professionals.py
+tests/test_profissionais_live.py
