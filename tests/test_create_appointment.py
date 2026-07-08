@@ -5,38 +5,28 @@ from ana_feegow.errors import FeegowAPIError
 
 dados = {
     "local_id": 1,
-    "paciente_id": 68,
+    "paciente_id": 12,
     "profissional_id": 1,
     "especialidade_id": 271,
     "procedimento_id": 1,
-    "data": "10-07-2026",
-    "horario": "15:30:00",
+    "data": "09-07-2026",
+    "horario": "14:00:00",
     "valor": 99.99,
     "plano": 0,
-    "canal_id": 10,
+    "canal_id": 0,
     "tabela_id": 0,
-    "notas": "Teste MCP ANA",
-    "celular": "(21)99999-9999",
+    "notas": "Agendado pela ANA",
+    "celular": "(21)98592-9056",
     "telefone": "",
-    "email": "teste@magnolia.com",
+    "email": "",
     "retorno": False,
     "sys_user": 173285819,
 }
 
 try:
-    resultado = criar_agendamento(dados)
-
-    print("\n==========================")
-    print("RESPOSTA")
-    print("==========================")
-    pprint(resultado)
+    pprint(criar_agendamento(dados))
 
 except FeegowAPIError as e:
-    print("\n==========================")
-    print("STATUS:", e.status_code)
-    print("==========================")
-    print(e.body)
-
-    if hasattr(e, "context"):
-        print("\nPAYLOAD ENVIADO:")
-        pprint(e.context.get("json"))
+    print("\nSTATUS:", e.status_code)
+    print("MENSAGEM:", e.message)
+    pprint(e.payload)
