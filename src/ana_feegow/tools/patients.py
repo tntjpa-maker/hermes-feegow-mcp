@@ -5,6 +5,7 @@ from ana_feegow.client import FeegowClient
 
 def buscar_paciente(
     nome: Optional[str] = None,
+    cpf: Optional[str] = None,
     telefone: Optional[str] = None,
     client: Optional[FeegowClient] = None,
 ):
@@ -12,11 +13,14 @@ def buscar_paciente(
 
     params = {}
 
-    if nome:
-        params["nome"] = nome
-
-    if telefone:
+    if cpf:
+        params["cpf"] = cpf
+    elif telefone:
         params["celular"] = telefone
+    elif nome:
+        params["nome"] = nome
+    else:
+        raise ValueError("Informe nome, CPF ou telefone.")
 
     return client.get("/patient/list", params=params)
 

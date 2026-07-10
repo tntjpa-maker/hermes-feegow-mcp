@@ -31,6 +31,13 @@ class FeegowClient:
 
         for attempt in range(1, self.retries + 1):
             try:
+                print("=" * 60)
+                print("FEEGOW REQUEST")
+                print("METHOD:", method)
+                print("URL:", url)
+                print("PARAMS:", params)
+                print("JSON:", json)
+
                 response = requests.request(
                     method=method.upper(),
                     url=url,
@@ -40,11 +47,18 @@ class FeegowClient:
                     timeout=self.timeout,
                 )
 
+                print("STATUS:", response.status_code)
+                print("BODY:", response.text[:1000])
+
                 if response.status_code in (401, 403):
                     raise FeegowAuthError(f"Erro de autenticação Feegow: {response.status_code}")
 
                 if response.status_code >= 400:
-                    raise FeegowAPIError(response.status_code, response.text, {"url": url, "params": params, "json": json})
+                    raise FeegowAPIError(
+                        response.status_code,
+                        response.text,
+                        {"url": url, "params": params, "json": json},
+                    )
 
                 try:
                     return response.json()

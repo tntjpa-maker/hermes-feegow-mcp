@@ -15,5 +15,13 @@
     "dados": {
       "novo_agendamento": 32
     }
+  },
+  {
+    "timestamp": "2026-07-09T13:14:54.435807",
+    "agendamento_id": 34,
+    "tipo": "consulta_remarcada",
+    "dados": {
+      "novo_agendamento": 35
+    }
   }
 ]

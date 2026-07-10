@@ -4,6 +4,20 @@ from ana_feegow.client import FeegowClient
 from ana_feegow.settings.clinic import CLINIC
 from ana_feegow.settings.services import SERVICES
 
+MAPA_SERVICOS = {
+    "consulta": "consulta_presencial",
+    "primeira": "consulta_presencial",
+    "primeira consulta": "consulta_presencial",
+    "consulta presencial": "consulta_presencial",
+    "retorno": "consulta_presencial",
+    "presencial": "consulta_presencial",
+    "online": "consulta_online",
+    "consulta online": "consulta_online",
+    "hibrida": "consulta_hibrida",
+    "híbrida": "consulta_hibrida",
+    "consulta híbrida": "consulta_hibrida",
+}
+
 
 def consultar_horarios(
     tipo_consulta: str,
@@ -11,10 +25,14 @@ def consultar_horarios(
     data_fim: str,
     client: Optional[FeegowClient] = None,
 ):
-
     client = client or FeegowClient()
 
-    servico = SERVICES[tipo_consulta]
+    chave = MAPA_SERVICOS.get(
+        tipo_consulta.strip().lower(),
+        "consulta_presencial",
+    )
+
+    servico = SERVICES[chave]
 
     return client.get(
         "/appoints/available-schedule",
