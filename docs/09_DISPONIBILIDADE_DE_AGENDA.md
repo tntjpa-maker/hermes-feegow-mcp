@@ -1,53 +1,41 @@
 # Disponibilidade de Agenda
 
-## Objetivo
+## Status
 
-Fornecer à ANA apenas os horários realmente disponíveis para agendamento.
+Sprint concluído e validado.
 
-A inteligência de disponibilidade permanece no MCP.
+---
 
-A Feegow fornece apenas os dados brutos da agenda.
+# Objetivo
+
+Disponibilizar para a ANA apenas horários realmente livres.
+
+Toda a inteligência permanece dentro do MCP.
+
+A Feegow fornece apenas os dados da agenda.
 
 ---
 
 # Arquitetura
 
 Paciente
-    ↓
+        │
+        ▼
 ANA
-    ↓
+        │
+        ▼
 AvailabilityService
-    ├── consultar_horarios()
-    │       ↓
-    │   /appoints/search
-    │
-    └── Schedule
-            ↓
-      Grade da médica
-
-↓
-
+        │
+        ├── consultar agenda ocupada
+        │
+        ├── carregar grade de atendimento
+        │
+        ├── gerar slots
+        │
+        ├── eliminar conflitos
+        │
+        ▼
 Horários disponíveis
-
----
-
-# Fluxo
-
-1. ANA identifica intenção de agendamento.
-
-2. AvailabilityService consulta:
-
-GET /appoints/search
-
-3. Recebe todos os agendamentos do período.
-
-4. Carrega a grade oficial da médica.
-
-5. Gera slots.
-
-6. Elimina slots conflitantes.
-
-7. Retorna apenas horários livres.
 
 ---
 
@@ -55,19 +43,26 @@ GET /appoints/search
 
 src/ana_feegow/tools/availability.py
 
-Responsável por consultar a agenda ocupada.
+Consulta os agendamentos existentes.
 
 ---
 
 src/ana_feegow/services/availability_service.py
 
-Responsável pela inteligência de disponibilidade.
+Motor de disponibilidade.
+
+Responsável por:
+
+- consultar agenda
+- gerar slots
+- calcular conflitos
+- retornar horários livres
 
 ---
 
 src/ana_feegow/services/slot_service.py
 
-Responsável por gerar slots da agenda.
+Responsável pela geração dos slots da agenda.
 
 ---
 
@@ -79,37 +74,244 @@ Modelo de Slot.
 
 src/ana_feegow/settings/schedule.py
 
-Configuração da grade de atendimento.
+Configuração da agenda do profissional.
 
 ---
 
-# Decisões Arquiteturais
+# Endpoints avaliados
 
-Não utilizar:
+## 1
 
-GET /appoints/available-schedule
+GET
 
-Motivo:
-
-Retornava agenda vazia mesmo existindo horários livres.
-
-Optou-se por utilizar:
-
-GET /appoints/search
-
-que retorna todos os agendamentos e permite ao MCP calcular a disponibilidade.
-
-Toda a inteligência permanece no MCP.
-
----
-
-# Estado
+/api/professional/list
 
 Status:
 
-VALIDADO
+Utilizado.
 
-Testado com agenda real da Dra. Thalita.
+Finalidade:
 
-Disponibilidade calculada corretamente.
+Listagem de profissionais.
+
+Resultado:
+
+Validado.
+
+---
+
+## 2
+
+GET
+
+/api/patient/list
+
+Status:
+
+Utilizado.
+
+Finalidade:
+
+Busca de pacientes.
+
+Resultado:
+
+Validado.
+
+---
+
+## 3
+
+POST
+
+/api/patient/create
+
+Status:
+
+Utilizado.
+
+Finalidade:
+
+Cadastro de pacientes.
+
+Resultado:
+
+Validado.
+
+---
+
+## 4
+
+GET
+
+/api/appoints/available-schedule
+
+Status:
+
+DESCARTADO.
+
+Motivo:
+
+Mesmo existindo horários livres na agenda da médica, retornava:
+
+content: []
+
+Não representa corretamente a agenda operacional da clínica.
+
+Não será utilizado.
+
+---
+
+## 5
+
+GET
+
+/appoints/search
+
+Status:
+
+UTILIZADO.
+
+Finalidade:
+
+Consultar todos os agendamentos do profissional.
+
+Resultado:
+
+Retorna:
+
+- horário
+- duração
+- procedimento
+- profissional
+- local
+- status
+- paciente
+- encaixe
+
+A partir desses dados o MCP calcula a disponibilidade.
+
+---
+
+## 6
+
+POST
+
+https://booking.feegow.com/api/working-hours/schedules/batch/preview
+
+Status:
+
+Investigado.
+
+Resultado:
+
+Necessita autenticação diferente da API pública.
+
+Utiliza JWT da aplicação Web.
+
+Não será utilizado na versão atual.
+
+---
+
+# Lógica implementada
+
+1.
+
+Consultar agenda do profissional.
+
+↓
+
+appoints/search
+
+2.
+
+Receber todos os agendamentos.
+
+3.
+
+Carregar grade do profissional.
+
+4.
+
+Gerar slots.
+
+5.
+
+Transformar cada agendamento em intervalo.
+
+6.
+
+Eliminar slots conflitantes.
+
+7.
+
+Retornar apenas horários disponíveis.
+
+---
+
+# Regras atuais
+
+Grade configurável.
+
+Slot configurável.
+
+Consulta pode possuir duração variável.
+
+Conflitos calculados por intervalo.
+
+Não depende do endpoint available-schedule.
+
+---
+
+# Testes realizados
+
+✔ Busca de profissionais
+
+✔ Busca de pacientes
+
+✔ Cadastro de pacientes
+
+✔ Consulta de agenda
+
+✔ Geração de slots
+
+✔ Cálculo de conflitos
+
+✔ Disponibilidade final
+
+Resultado validado com agenda real da Dra. Thalita.
+
+---
+
+# Próximo Sprint
+
+Integrar AvailabilityService ao fluxo da ANA.
+
+Fluxo esperado:
+
+Paciente
+
+↓
+
+Quero marcar consulta
+
+↓
+
+ANA
+
+↓
+
+AvailabilityService
+
+↓
+
+14:30
+
+16:00
+
+16:30
+
+↓
+
+Paciente escolhe horário.
 
