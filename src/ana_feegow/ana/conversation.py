@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from ana_feegow.ana.goal import Goal
 
 
 BASE = Path(__file__).resolve().parents[3] / "data" / "conversations"
@@ -12,6 +13,7 @@ class Conversation:
         self.telefone = telefone
         self.state = "inicio"
         self.data = {}
+        self.goal = Goal('agendar')
 
         if telefone:
             self.carregar()

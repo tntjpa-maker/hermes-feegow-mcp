@@ -1,11 +1,9 @@
-from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from ana_feegow.client import FeegowClient
 from ana_feegow.settings.clinic import CLINIC
 from ana_feegow.settings.services import SERVICES
-
 
 MAPA_SERVICOS = {
     "consulta": "consulta_presencial",
@@ -22,6 +20,10 @@ MAPA_SERVICOS = {
 }
 
 
+def _feegow_date(data: str) -> str:
+    return datetime.strptime(data, "%Y-%m-%d").strftime("%d-%m-%Y")
+
+
 def consultar_horarios(
     tipo_consulta: str,
     data_inicio: str,
@@ -35,31 +37,16 @@ def consultar_horarios(
         "consulta_presencial",
     )
 
-    duracao = SERVICES[chave]["duracao"]
+    servico = SERVICES[chave]
 
-    agenda = client.get(
-        "/appoints/search",
+    return client.get(
+        "/appoints/available-schedule",
         params={
-            "profissional_id": CLINIC["profissional_id"],
-            "data_start": datetime.strptime(
-                data_inicio,
-                "%Y-%m-%d",
-            ).strftime("%d-%m-%Y"),
-            "data_end": datetime.strptime(
-                data_fim,
-                "%Y-%m-%d",
-            ).strftime("%d-%m-%Y"),
+            "tipo": "P",
+            "procedimento_id": servico["procedimento_id"],
+            "unidade_id": CLINIC["local_id"],
+            "convenio_id": CLINIC["convenio_id"],
+            "data_start": _feegow_date(data_inicio),
+            "data_end": _feegow_date(data_fim),
         },
     )
-
-    ocupados = defaultdict(set)
-
-    for item in agenda.get("content", []):
-        ocupados[item["data"]].add(item["horario"][:5])
-
-    return {
-        "success": True,
-        "ocupados": dict(ocupados),
-        "duracao_consulta": duracao,
-        "agenda": agenda.get("content", []),
-    }

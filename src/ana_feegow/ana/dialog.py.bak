@@ -13,25 +13,7 @@ def responder(telefone: str, mensagem: str):
 
     conv = Conversation(telefone)
 
-    decisao = decidir(mensagem)
-
-    # Dúvidas objetivas podem interromper qualquer etapa do fluxo.
-    if decisao.get("intencao") in RESPOSTAS:
-        resposta = executar(decisao, conv)
-        if resposta:
-            return resposta
-
-    # Toda mensagem passa primeiro pelo Decision Engine.
-    resposta = executar(decisao, conv)
-
-    if resposta and resposta != "Ainda não sei executar essa ação.":
-        return resposta
-
-    # Fluxo legado (temporário).
-    resposta = executar_estado(conv, mensagem)
-
-    if resposta:
-        return resposta
+    acao = decidir(mensagem)
 
     if conv.state == "aguardando_motivo":
         conv.update("motivo", mensagem)
