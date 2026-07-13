@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "clinic_name": "Clínica Magnólia",
+  "description": "Clínica especializada em Ginecologia.",
+  "address": "Av. Sete de Setembro, 317",
+  "room": "Sala 405",
+  "city": "Niterói",
+  "state": "RJ",
+  "zipcode": "",
+  "google_maps": "",
+  "whatsapp": "",
+  "phone": "",
+  "email": "",
+  "website": "",
+  "instagram": "",
+  "parking": "",
+  "accessibility": true
+}

@@ -1,0 +1,62 @@
+{
+  "clinic": {
+    "name": "Clínica Magnólia",
+    "specialty": "Ginecologia",
+    "address": "",
+    "room": "",
+    "city": "",
+    "state": "",
+    "zipcode": "",
+    "whatsapp": "",
+    "phone": "",
+    "email": "",
+    "website": ""
+  },
+
+  "doctor": {
+    "name": "Dra. Thalita Menezes",
+    "crm": "",
+    "rqe": "",
+    "specialties": [
+      "Ginecologia"
+    ]
+  },
+
+  "business_hours": {
+    "monday": "",
+    "tuesday": "",
+    "wednesday": "",
+    "thursday": "",
+    "friday": "",
+    "saturday": "",
+    "sunday": ""
+  },
+
+  "consultation": {
+    "first_visit_price": "",
+    "return_visit_price": "",
+    "duration_minutes": 60
+  },
+
+  "payment": {
+    "pix": true,
+    "credit_card": true,
+    "debit_card": true,
+    "cash": true,
+    "installments": ""
+  },
+
+  "insurance": {
+    "accepted": false,
+    "details": ""
+  },
+
+  "services": [
+    "Consulta ginecológica",
+    "Preventivo",
+    "Inserção de DIU",
+    "Implantes hormonais",
+    "Reposição hormonal",
+    "Ultrassonografia"
+  ]
+}

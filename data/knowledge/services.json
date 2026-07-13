@@ -1,0 +1,11 @@
+{
+  "services": [
+    "Consulta ginecológica presencial",
+    "Consulta ginecológica online",
+    "Consulta híbrida",
+    "Preventivo",
+    "Inserção de DIU",
+    "Implantes hormonais",
+    "Reposição hormonal"
+  ]
+}

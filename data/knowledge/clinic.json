@@ -1,0 +1,11 @@
+{
+  "$schema": "1.0",
+  "includes": [
+    "clinic_info.json",
+    "doctor.json",
+    "services.json",
+    "prices.json",
+    "business_hours.json",
+    "payment.json"
+  ]
+}
