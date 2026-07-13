@@ -1,0 +1,130 @@
+src/ana_feegow/appointments/list_status.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/appointments/create.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/appointments/update_status.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/ana/dialog.py.bak:from ana_feegow.ana.conversation import Conversation
+src/ana_feegow/ana/dialog.py.bak:from ana_feegow.ana.decision import decidir
+src/ana_feegow/ana/dialog.py.bak:from ana_feegow.ana.knowledge import RESPOSTAS
+src/ana_feegow/ana/dialog.py.bak:from ana_feegow.ana.executor import executar
+src/ana_feegow/ana/dialog.py.bak:from ana_feegow.workflows.state_machine import executar_estado
+src/ana_feegow/ana/dialog.py.bak:from ana_feegow.tools.availability import consultar_horarios
+src/ana_feegow/ana/dialog.py.bak:from ana_feegow.ana.service import identificar_servico
+src/ana_feegow/ana/dialog.py.bak:from ana_feegow.services.agendamento_service import agendar_consulta
+src/ana_feegow/ana/dialog.py.bak:from ana_feegow.tools.identify import identificar_paciente
+src/ana_feegow/ana/dialog.py:from ana_feegow.ana.conversation import Conversation
+src/ana_feegow/ana/dialog.py:from ana_feegow.ana.decision import decidir
+src/ana_feegow/ana/dialog.py:from ana_feegow.ana.executor import executar
+src/ana_feegow/ana/dialog.py:from ana_feegow.ana.knowledge import RESPOSTAS
+src/ana_feegow/ana/dialog.py:from ana_feegow.workflows.manager import WorkflowManager
+src/ana_feegow/ana/conversation.py:from pathlib import Path
+src/ana_feegow/ana/conversation.py:from ana_feegow.ana.goal import Goal
+src/ana_feegow/ana/dialog.py.sprint1:from ana_feegow.ana.conversation import Conversation
+src/ana_feegow/ana/dialog.py.sprint1:from ana_feegow.ana.decision import decidir
+src/ana_feegow/ana/dialog.py.sprint1:from ana_feegow.ana.executor import executar
+src/ana_feegow/ana/dialog.py.sprint1:from ana_feegow.ana.knowledge import RESPOSTAS
+src/ana_feegow/ana/dialog.py.sprint1:from ana_feegow.workflows.state_machine import executar_estado
+src/ana_feegow/ana/dialog.py.sprint1:from ana_feegow.services.availability_service import (
+src/ana_feegow/ana/dialog.py.sprint1:from ana_feegow.ana.service import identificar_servico
+src/ana_feegow/ana/dialog.py.sprint1:from ana_feegow.services.agendamento_service import (
+src/ana_feegow/ana/dialog.py.sprint1:from ana_feegow.tools.identify import identificar_paciente
+src/ana_feegow/ana/dialog.py.pre_workflow.bak:from ana_feegow.ana.conversation import Conversation
+src/ana_feegow/ana/dialog.py.pre_workflow.bak:from ana_feegow.ana.decision import decidir
+src/ana_feegow/ana/dialog.py.pre_workflow.bak:from ana_feegow.ana.knowledge import RESPOSTAS
+src/ana_feegow/ana/dialog.py.pre_workflow.bak:from ana_feegow.ana.executor import executar
+src/ana_feegow/ana/dialog.py.pre_workflow.bak:from ana_feegow.workflows.state_machine import executar_estado
+src/ana_feegow/ana/dialog.py.pre_workflow.bak:from ana_feegow.services.availability_service import listar_horarios_disponiveis
+src/ana_feegow/ana/dialog.py.pre_workflow.bak:from ana_feegow.ana.service import identificar_servico
+src/ana_feegow/ana/dialog.py.pre_workflow.bak:from ana_feegow.services.agendamento_service import agendar_consulta
+src/ana_feegow/ana/dialog.py.pre_workflow.bak:from ana_feegow.tools.identify import identificar_paciente
+src/ana_feegow/ana/conversation.py.bkp_sprint1:from pathlib import Path
+src/ana_feegow/ana/conversation.py.bkp_sprint1:from ana_feegow.ana.goal import Goal
+src/ana_feegow/ana/executor.py:from ana_feegow.handlers.responder import responder
+src/ana_feegow/ana/executor.py:from ana_feegow.handlers.agendar import agendar
+src/ana_feegow/ana/executor.py:from ana_feegow.handlers.cadastro import cadastro
+src/ana_feegow/ana/dialog.py.sprint1-final:from ana_feegow.ana.conversation import Conversation
+src/ana_feegow/ana/dialog.py.sprint1-final:from ana_feegow.ana.decision import decidir
+src/ana_feegow/ana/dialog.py.sprint1-final:from ana_feegow.ana.executor import executar
+src/ana_feegow/ana/dialog.py.sprint1-final:from ana_feegow.ana.knowledge import RESPOSTAS
+src/ana_feegow/ana/dialog.py.sprint1-final:from ana_feegow.workflows.manager import dispatch
+src/ana_feegow/ana/dialog.py.sprint1-final:from ana_feegow.services.availability_service import (
+src/ana_feegow/ana/dialog.py.sprint1-final:from ana_feegow.ana.service import identificar_servico
+src/ana_feegow/ana/dialog.py.sprint1-final:from ana_feegow.services.agendamento_service import (
+src/ana_feegow/ana/dialog.py.sprint1-final:from ana_feegow.tools.identify import identificar_paciente
+src/ana_feegow/ana/dialog.py.before_workflow_cleanup:from ana_feegow.ana.conversation import Conversation
+src/ana_feegow/ana/dialog.py.before_workflow_cleanup:from ana_feegow.ana.decision import decidir
+src/ana_feegow/ana/dialog.py.before_workflow_cleanup:from ana_feegow.ana.executor import executar
+src/ana_feegow/ana/dialog.py.before_workflow_cleanup:from ana_feegow.ana.knowledge import RESPOSTAS
+src/ana_feegow/ana/dialog.py.before_workflow_cleanup:from ana_feegow.workflows.manager import dispatch
+src/ana_feegow/ana/dialog.py.before_workflow_cleanup:from ana_feegow.services.availability_service import (
+src/ana_feegow/ana/dialog.py.before_workflow_cleanup:from ana_feegow.ana.service import identificar_servico
+src/ana_feegow/ana/dialog.py.before_workflow_cleanup:from ana_feegow.services.agendamento_service import (
+src/ana_feegow/ana/dialog.py.before_workflow_cleanup:from ana_feegow.tools.identify import identificar_paciente
+src/ana_feegow/mcp/server.py:from fastmcp import FastMCP
+src/ana_feegow/mcp/server.py:from pathlib import Path
+src/ana_feegow/mcp/server.py:from ana_feegow.ana.dialog import responder
+src/ana_feegow/managers/payment_manager.py:from datetime import datetime
+src/ana_feegow/workflows/finalizar_pagamento.py:from ana_feegow.appointments.update_status import atualizar_status
+src/ana_feegow/workflows/agendamento.py:from datetime import datetime
+src/ana_feegow/workflows/agendamento.py:from typing import Optional
+src/ana_feegow/workflows/agendamento.py:from ana_feegow.ana.service import identificar_servico
+src/ana_feegow/workflows/agendamento.py:from ana_feegow.services.agendamento_service import agendar_consulta
+src/ana_feegow/workflows/agendamento.py:from ana_feegow.services.availability_service import (
+src/ana_feegow/workflows/agendamento.py:from ana_feegow.tools.identify import identificar_paciente
+src/ana_feegow/workflows/event_store.py:from datetime import datetime
+src/ana_feegow/workflows/event_store.py:from pathlib import Path
+src/ana_feegow/workflows/manager.py:from ana_feegow.workflows.agendamento import executar_agendamento
+src/ana_feegow/workflows/pagamento.py:from datetime import datetime, timedelta
+src/ana_feegow/workflows/remarcacao.py:from datetime import datetime, timedelta
+src/ana_feegow/workflows/remarcacao.py:from ana_feegow.tools.availability import consultar_horarios
+src/ana_feegow/workflows/remarcacao.py:from ana_feegow.services.agendamento_service import agendar_consulta
+src/ana_feegow/workflows/remarcacao.py:from ana_feegow.appointments.update_status import atualizar_status
+src/ana_feegow/workflows/remarcacao.py:from ana_feegow.workflows.event_store import registrar_evento
+src/ana_feegow/workflows/reserva_store.py:from pathlib import Path
+src/ana_feegow/workflows/reserva_pagamento.py:from ana_feegow.services.agendamento_service import agendar_consulta
+src/ana_feegow/workflows/reserva_pagamento.py:from ana_feegow.appointments.update_status import atualizar_status
+src/ana_feegow/models/slot.py:from dataclasses import dataclass
+src/ana_feegow/client.py:from typing import Any, Dict, Optional
+src/ana_feegow/client.py:from ana_feegow.config import settings
+src/ana_feegow/client.py:from ana_feegow.errors import FeegowAPIError, FeegowAuthError, FeegowTimeoutError
+src/ana_feegow/services/slot_service.py:from datetime import datetime, timedelta
+src/ana_feegow/services/slot_service.py:from ana_feegow.models.slot import Slot
+src/ana_feegow/services/availability_service.py:from datetime import datetime, timedelta
+src/ana_feegow/services/availability_service.py:from ana_feegow.services.slot_service import gerar_slots
+src/ana_feegow/services/availability_service.py:from ana_feegow.settings.schedule import SCHEDULE
+src/ana_feegow/services/availability_service.py:from ana_feegow.tools.availability import consultar_horarios
+src/ana_feegow/services/agendamento_service.py:from ana_feegow.tools.appointments import criar_agendamento
+src/ana_feegow/services/agendamento_service.py:from ana_feegow.settings.clinic import CLINIC
+src/ana_feegow/services/agendamento_service.py:from ana_feegow.settings.services import SERVICES
+src/ana_feegow/handlers/responder.py:from ana_feegow.ana.knowledge import RESPOSTAS
+src/ana_feegow/config.py:from pydantic_settings import BaseSettings, SettingsConfigDict
+src/ana_feegow/tools/patients.py:from typing import Optional
+src/ana_feegow/tools/patients.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/tools/list_appointments.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/tools/professionals.py:from typing import Optional
+src/ana_feegow/tools/professionals.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/tools/professionals.py:from ana_feegow.config import settings
+src/ana_feegow/tools/create_patient.py:from typing import Optional
+src/ana_feegow/tools/create_patient.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/tools/appointments.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/tools/availability.py:from collections import defaultdict
+src/ana_feegow/tools/availability.py:from datetime import datetime, timedelta
+src/ana_feegow/tools/availability.py:from typing import Optional
+src/ana_feegow/tools/availability.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/tools/availability.py:from ana_feegow.settings.clinic import CLINIC
+src/ana_feegow/tools/availability.py:from ana_feegow.settings.services import SERVICES
+src/ana_feegow/tools/status.py:from typing import Optional
+src/ana_feegow/tools/status.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/tools/identify.py:from typing import Optional
+src/ana_feegow/tools/identify.py:from ana_feegow.client import FeegowClient
+src/ana_feegow/tools/availability.py.bak:from datetime import datetime
+src/ana_feegow/tools/availability.py.bak:from typing import Optional
+src/ana_feegow/tools/availability.py.bak:from ana_feegow.client import FeegowClient
+src/ana_feegow/tools/availability.py.bak:from ana_feegow.settings.clinic import CLINIC
+src/ana_feegow/tools/availability.py.bak:from ana_feegow.settings.services import SERVICES
+src/ana_feegow/ana/conversation.py:import json
+src/ana_feegow/ana/conversation.py.bkp_sprint1:import json
+src/ana_feegow/mcp/server.py:import traceback
+src/ana_feegow/workflows/agendamento.py:import re
+src/ana_feegow/workflows/event_store.py:import json
+src/ana_feegow/workflows/reserva_store.py:import json
+src/ana_feegow/client.py:import time
+src/ana_feegow/client.py:import requests

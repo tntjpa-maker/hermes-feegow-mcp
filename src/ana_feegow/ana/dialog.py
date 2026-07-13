@@ -1,108 +1,50 @@
 from ana_feegow.ana.conversation import Conversation
 from ana_feegow.ana.decision import decidir
 from ana_feegow.ana.knowledge import RESPOSTAS
-from ana_feegow.ana.executor import executar
-from ana_feegow.workflows.state_machine import executar_estado
-from ana_feegow.tools.availability import consultar_horarios
-from ana_feegow.ana.service import identificar_servico
-from ana_feegow.services.agendamento_service import agendar_consulta
-from ana_feegow.tools.identify import identificar_paciente
+from ana_feegow.workflows.manager import WorkflowManager
 
 
-def responder(telefone: str, mensagem: str):
-
+def responder(
+    telefone: str,
+    mensagem: str,
+):
+    print("\n### MCP BUILD 2026-07-13 13:35 ###\n")
     conv = Conversation(telefone)
 
+    print("=" * 60)
+    print("MENSAGEM :", mensagem)
+    print("TELEFONE :", telefone)
+    print("WORKFLOW :", conv.workflow)
+    print("STATE    :", conv.state)
+    print("DATA     :", conv.data)
+    print("=" * 60)
+
+
+    if conv.human_mode:
+        return None
+
+    resposta = WorkflowManager.execute(
+        conv=conv,
+        telefone=telefone,
+        mensagem=mensagem,
+    )
+
+    if resposta is not None:
+        return resposta
+
     decisao = decidir(mensagem)
+    intencao = decisao.get("intencao")
 
-    # Dúvidas objetivas podem interromper qualquer etapa do fluxo.
-    if decisao.get("intencao") in RESPOSTAS:
-        resposta = executar(decisao, conv)
-        if resposta:
-            return resposta
+    if intencao in RESPOSTAS:
+        return RESPOSTAS[intencao]
 
-    # Toda mensagem passa primeiro pelo Decision Engine.
-    resposta = executar(decisao, conv)
+    resposta = WorkflowManager.start(
+        decisao=decisao,
+        conv=conv,
+        telefone=telefone,
+    )
 
-    if resposta and resposta != "Ainda não sei executar essa ação.":
+    if resposta is not None:
         return resposta
 
-    # Fluxo legado (temporário).
-    resposta = executar_estado(conv, mensagem)
-
-    if resposta:
-        return resposta
-
-    if conv.state == "aguardando_motivo":
-        conv.update("motivo", mensagem)
-        conv.next("aguardando_data")
-        return "Qual dia você prefere para a consulta? (dd/mm/aaaa)"
-
-    if conv.state == "aguardando_data":
-        mensagem = mensagem.replace("/", "-")
-        conv.goal.preencher("data", mensagem)
-        conv.update("data", mensagem)
-
-        tipo_consulta = identificar_servico(conv.data["motivo"])
-        conv.update("tipo_consulta", tipo_consulta)
-
-        horarios = consultar_horarios(
-            tipo_consulta,
-            mensagem,
-            mensagem,
-        )
-
-        conv.update("horarios", horarios)
-
-        conv.next("aguardando_horario")
-
-        if horarios.get("content"):
-            return horarios
-
-        return "Informe o horário desejado (HH:MM)."
-
-    if conv.state == "aguardando_horario":
-        conv.goal.preencher("horario", mensagem)
-        conv.update("horario", mensagem)
-
-        paciente = identificar_paciente("21985929056")
-
-        if not paciente["existe"]:
-            conv.next("cadastro_pendente")
-
-            return (
-                "Perfeito! 😊\n\n"
-                "Encontrei um horário disponível. "
-                "Agora vou precisar realizar um cadastro rápido para concluir o agendamento."
-            )
-
-        try:
-
-            resultado = agendar_consulta(
-                paciente_id=paciente["paciente"]["patient_id"],
-                tipo_consulta=conv.data["tipo_consulta"],
-                data=conv.data["data"],
-                horario=mensagem + ":00",
-                notas="Agendado pela ANA",
-            )
-
-            conv.next("finalizado")
-
-            return (
-                f"Consulta agendada com sucesso!\n"
-                f"ID: {resultado['content']['agendamento_id']}"
-            )
-
-        except Exception as e:
-
-            erro = str(e)
-
-            if "409" in erro:
-                return (
-                    "Esse horário não está mais disponível. "
-                    "Escolha outro horário, por favor."
-                )
-
-            raise
-
-    return "Não consegui entender."
+    return "Não consegui entender sua solicitação."

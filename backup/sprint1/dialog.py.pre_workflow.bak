@@ -1,0 +1,129 @@
+from ana_feegow.ana.conversation import Conversation
+from ana_feegow.ana.decision import decidir
+from ana_feegow.ana.knowledge import RESPOSTAS
+from ana_feegow.ana.executor import executar
+from ana_feegow.workflows.state_machine import executar_estado
+from ana_feegow.services.availability_service import listar_horarios_disponiveis
+from ana_feegow.ana.service import identificar_servico
+from ana_feegow.services.agendamento_service import agendar_consulta
+from ana_feegow.tools.identify import identificar_paciente
+
+
+def responder(telefone: str, mensagem: str):
+
+
+
+    conv = Conversation(telefone)
+
+
+
+    decisao = decidir(mensagem)
+
+
+
+    # Dúvidas objetivas podem interromper qualquer etapa do fluxo.
+    if decisao.get("intencao") in RESPOSTAS:
+        resposta = executar(decisao, conv)
+        if resposta:
+            return resposta
+
+    # Toda mensagem passa primeiro pelo Decision Engine.
+    resposta = executar(decisao, conv)
+
+    if resposta and resposta != "Ainda não sei executar essa ação.":
+        return resposta
+
+    # Fluxo legado (temporário).
+    resposta = executar_estado(conv, mensagem)
+
+    if resposta:
+        return resposta
+
+    if conv.state == "aguardando_motivo":
+        conv.update("motivo", mensagem)
+        conv.next("aguardando_data")
+        return "Qual dia você prefere para a consulta? (dd/mm/aaaa)"
+
+    if conv.state == "aguardando_data":
+        mensagem = mensagem.replace("/", "-")
+        conv.goal.preencher("data", mensagem)
+        conv.update("data", mensagem)
+
+        tipo_consulta = identificar_servico(conv.data["motivo"])
+        conv.update("tipo_consulta", tipo_consulta)
+
+        horarios = listar_horarios_disponiveis(
+            tipo_consulta,
+            mensagem,
+            mensagem,
+        )
+
+        conv.update("horarios", horarios)
+
+        conv.next("aguardando_horario")
+
+        if not horarios["slots"]:
+            return (
+                "Infelizmente não encontrei horários disponíveis nos próximos dias."
+            )
+
+        if horarios["same_day"]:
+            return (
+                f"Tenho disponibilidade no dia {horarios['available_date']} nos seguintes horários:\n\n"
+                + "\n".join(f"• {h}" for h in horarios["slots"])
+                + "\n\nQual horário você prefere?"
+            )
+
+        return (
+            f"A Dra. Thalita não possui atendimento disponível em {horarios['requested_date']}.\n\n"
+            f"A próxima disponibilidade é {horarios['available_date']}:\n\n"
+            + "\n".join(f"• {h}" for h in horarios["slots"])
+            + "\n\nQual horário você prefere?"
+        )
+
+    if conv.state == "aguardando_horario":
+        conv.goal.preencher("horario", mensagem)
+        conv.update("horario", mensagem)
+
+        paciente = identificar_paciente("21985929056")
+
+        if not paciente["existe"]:
+            conv.next("cadastro_pendente")
+
+            return (
+                "Perfeito! 😊\n\n"
+                "Encontrei um horário disponível. "
+                "Agora vou precisar realizar um cadastro rápido para concluir o agendamento."
+            )
+
+        try:
+
+            resultado = agendar_consulta(
+                paciente_id=paciente["paciente"]["patient_id"],
+                tipo_consulta=conv.data["tipo_consulta"],
+                data=conv.data["data"],
+                horario=mensagem + ":00",
+                notas="Agendado pela ANA",
+            )
+
+            conv.next("finalizado")
+
+            return (
+                f"Consulta agendada com sucesso!\n"
+                f"ID: {resultado['content']['agendamento_id']}"
+            )
+
+        except Exception as e:
+
+            erro = str(e)
+
+            if "409" in erro:
+                return (
+                    "Esse horário não está mais disponível. "
+                    "Escolha outro horário, por favor."
+                )
+
+            raise
+
+    return "Não consegui entender."
+

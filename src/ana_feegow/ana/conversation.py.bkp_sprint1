@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
-
 from ana_feegow.ana.goal import Goal
+
 
 BASE = Path(__file__).resolve().parents[3] / "data" / "conversations"
 BASE.mkdir(parents=True, exist_ok=True)
@@ -10,18 +10,10 @@ BASE.mkdir(parents=True, exist_ok=True)
 class Conversation:
 
     def __init__(self, telefone=None):
-
         self.telefone = telefone
-
-        self.workflow = None
         self.state = "inicio"
-
         self.data = {}
-        self.context = {}
-
-        self.human_mode = False
-
-        self.goal = Goal("agendar")
+        self.goal = Goal('agendar')
 
         if telefone:
             self.carregar()
@@ -30,45 +22,18 @@ class Conversation:
         self.data[key] = value
         self.salvar()
 
-    def update_context(self, key, value):
-        self.context[key] = value
-        self.salvar()
-
-    def set_workflow(self, workflow):
-        self.workflow = workflow
-        self.salvar()
-
     def next(self, state):
         self.state = state
         self.salvar()
 
-    def enable_human(self):
-        self.human_mode = True
-        self.salvar()
-
-    def disable_human(self):
-        self.human_mode = False
-        self.salvar()
-
-    def reset(self):
-        self.workflow = None
-        self.state = "inicio"
-        self.data = {}
-        self.context = {}
-        self.human_mode = False
-        self.salvar()
-
     def get(self):
         return {
-            "workflow": self.workflow,
             "state": self.state,
-            "data": self.data,
-            "context": self.context,
-            "human_mode": self.human_mode,
+            "data": self.data
         }
 
-    def salvar(self):
 
+    def salvar(self):
         if not self.telefone:
             return
 
@@ -85,17 +50,13 @@ class Conversation:
             )
 
     def carregar(self):
-
         arquivo = BASE / f"{self.telefone}.json"
 
         if not arquivo.exists():
             return
 
-        with open(arquivo, encoding="utf-8") as f:
+        with open(arquivo) as f:
             dados = json.load(f)
 
-        self.workflow = dados.get("workflow")
-        self.state = dados.get("state", "inicio")
-        self.data = dados.get("data", {})
-        self.context = dados.get("context", {})
-        self.human_mode = dados.get("human_mode", False)
+        self.state = dados["state"]
+        self.data = dados["data"]

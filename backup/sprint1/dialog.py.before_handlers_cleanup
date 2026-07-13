@@ -1,0 +1,62 @@
+from ana_feegow.ana.conversation import Conversation
+from ana_feegow.ana.decision import decidir
+from ana_feegow.ana.executor import executar
+from ana_feegow.ana.knowledge import RESPOSTAS
+
+from ana_feegow.workflows.manager import WorkflowManager
+
+
+def responder(
+    telefone: str,
+    mensagem: str,
+):
+
+    conv = Conversation(telefone)
+
+    #
+    # ==========================================================
+    # WORKFLOW ATIVO
+    # ==========================================================
+    #
+
+    resposta = WorkflowManager.execute(
+        conv=conv,
+        telefone=telefone,
+        mensagem=mensagem,
+    )
+
+    if resposta:
+        return resposta
+
+    #
+    # ==========================================================
+    # DECISION ENGINE
+    # ==========================================================
+    #
+
+    decisao = decidir(mensagem)
+
+    if decisao.get("intencao") in RESPOSTAS:
+
+        resposta = executar(
+            decisao,
+            conv,
+        )
+
+        if resposta:
+            return resposta
+
+    resposta = executar(
+        decisao,
+        conv,
+    )
+
+    if (
+        resposta
+        and resposta != "Ainda não sei executar essa ação."
+    ):
+        return resposta
+
+    return (
+        "Não consegui entender sua solicitação."
+    )

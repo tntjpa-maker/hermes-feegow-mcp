@@ -23,5 +23,14 @@
     "dados": {
       "novo_agendamento": 35
     }
+  },
+  {
+    "timestamp": "2026-07-13T09:10:51.329719",
+    "agendamento_id": 31,
+    "tipo": "reserva_criada",
+    "dados": {
+      "paciente_id": 68,
+      "status": 208
+    }
   }
 ]

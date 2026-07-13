@@ -1,0 +1,192 @@
+from ana_feegow.ana.conversation import Conversation
+from ana_feegow.ana.decision import decidir
+from ana_feegow.ana.executor import executar
+from ana_feegow.ana.knowledge import RESPOSTAS
+
+from ana_feegow.workflows.manager import dispatch
+
+from ana_feegow.services.availability_service import (
+    listar_horarios_disponiveis,
+)
+
+from ana_feegow.ana.service import identificar_servico
+
+from ana_feegow.services.agendamento_service import (
+    agendar_consulta,
+)
+
+from ana_feegow.tools.identify import identificar_paciente
+
+
+def responder(
+    telefone: str,
+    mensagem: str,
+):
+
+    conv = Conversation(telefone)
+
+    #
+    # ==========================================================
+    # FLUXOS EM ANDAMENTO TÊM PRIORIDADE ABSOLUTA
+    # ==========================================================
+    #
+
+    if conv.state == "aguardando_motivo":
+
+        conv.update("motivo", mensagem)
+        conv.next("aguardando_data")
+
+        return "Qual dia você prefere para a consulta? (dd/mm/aaaa)"
+
+    if conv.state == "aguardando_data":
+
+        from datetime import datetime
+
+        data = datetime.strptime(
+            mensagem.replace("/", "-"),
+            "%d-%m-%Y",
+        ).strftime("%Y-%m-%d")
+
+        conv.goal.preencher("data", data)
+        conv.update("data", data)
+
+        tipo = identificar_servico(conv.data["motivo"])
+
+        conv.update("tipo_consulta", tipo)
+
+        horarios = listar_horarios_disponiveis(
+            tipo,
+            data,
+            data,
+        )
+
+        conv.update("horarios", horarios)
+
+        conv.next("aguardando_horario")
+
+        if not horarios["slots"]:
+
+            return (
+                "Infelizmente não encontrei horários disponíveis "
+                "nos próximos dias."
+            )
+
+        if horarios["same_day"]:
+
+            return (
+                f"Tenho disponibilidade em "
+                f"{horarios['available_date']}:\n\n"
+                + "\n".join(
+                    f"• {h}"
+                    for h in horarios["slots"]
+                )
+                + "\n\nQual horário você prefere?"
+            )
+
+        return (
+            f"A Dra. Thalita não atende em "
+            f"{horarios['requested_date']}.\n\n"
+
+            f"A próxima data disponível é "
+
+            f"{horarios['available_date']}:\n\n"
+
+            + "\n".join(
+                f"• {h}"
+                for h in horarios["slots"]
+            )
+
+            + "\n\nQual horário você prefere?"
+        )
+
+    if conv.state == "aguardando_horario":
+
+        horario = mensagem.replace("h", ":").strip()
+
+        conv.goal.preencher(
+            "horario",
+            horario,
+        )
+
+        conv.update(
+            "horario",
+            horario,
+        )
+
+        paciente = identificar_paciente(
+            telefone,
+        )
+
+        if not paciente["existe"]:
+
+            conv.next("cadastro_pendente")
+
+            return (
+                "Perfeito.\n\n"
+                "Agora preciso realizar "
+                "o seu cadastro."
+            )
+
+        resultado = agendar_consulta(
+
+            paciente_id=paciente["paciente"]["patient_id"],
+
+            tipo_consulta=conv.data["tipo_consulta"],
+
+            data=conv.data["data"],
+
+            horario=horario + ":00",
+
+            notas="Agendado pela ANA",
+
+        )
+
+        conv.next("finalizado")
+
+        return (
+            "Consulta agendada com sucesso!\n\n"
+            f"Código: "
+            f"{resultado['content']['agendamento_id']}"
+        )
+
+    #
+    # ==========================================================
+    # A PARTIR DAQUI ENTRA O DECISION ENGINE
+    # ==========================================================
+    #
+
+    decisao = decidir(mensagem)
+
+    if decisao.get("intencao") in RESPOSTAS:
+
+        resposta = executar(
+            decisao,
+            conv,
+        )
+
+        if resposta:
+            return resposta
+
+    resposta = executar(
+        decisao,
+        conv,
+    )
+
+    if (
+        resposta
+        and resposta != "Ainda não sei executar essa ação."
+    ):
+        return resposta
+
+    resposta = dispatch(
+        conv=conv,
+        telefone=telefone,
+        mensagem=mensagem,
+    )
+
+    if resposta:
+        return resposta
+
+    return (
+        "Não consegui entender sua solicitação."
+    )

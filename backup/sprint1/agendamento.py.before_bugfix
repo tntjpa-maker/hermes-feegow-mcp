@@ -191,53 +191,16 @@ def executar_agendamento(
                 "Qual é o seu nome completo?"
             )
 
-        conv.next("aguardando_pagamento")
-
-        return (
-            "Perfeito! 😊\n\n"
-            "O horário está disponível.\n\n"
-            "Para confirmar sua reserva, é necessário o pagamento antecipado de 20% do valor da consulta.\n\n"
-            "Esse valor será abatido integralmente no pagamento realizado no consultório.\n\n"
-            'Após realizar o pagamento, responda apenas: "PAGUEI".'
-        )
-
-        conv.reset()
-
-        agendamento_id = resultado.get("content", {}).get(
-            "agendamento_id"
-        )
-
-        return (
-            f"Consulta reservada para "
-            f"{_formatar_data(conv.data['data'])} às {horario}."
-            + (
-                f"\nCódigo da reserva: {agendamento_id}."
-                if agendamento_id
-                else ""
-            )
-        )
-
-
-    if conv.state == "aguardando_pagamento":
-
-        if mensagem.strip().lower() != "paguei":
-            return (
-                'Assim que concluir o pagamento, responda apenas: "PAGUEI".'
-            )
-
-        paciente = identificar_paciente(telefone)
-
         try:
             resultado = agendar_consulta(
                 paciente_id=paciente["paciente"]["patient_id"],
                 tipo_consulta=conv.data["tipo_consulta"],
                 data=conv.data["data"],
-                horario=f"{conv.data['horario']}:00",
+                horario=f"{horario}:00",
                 notas="Agendado pela ANA",
             )
 
         except Exception as erro:
-
             if "409" in str(erro):
                 conv.next("aguardando_data")
 
@@ -248,18 +211,15 @@ def executar_agendamento(
 
             raise
 
-        data_confirmada = conv.data["data"]
-        horario_confirmado = conv.data["horario"]
+        conv.reset()
 
         agendamento_id = resultado.get("content", {}).get(
             "agendamento_id"
         )
 
-        conv.reset()
-
         return (
             f"Consulta reservada para "
-            f"{_formatar_data(data_confirmada)} às {horario_confirmado}."
+            f"{_formatar_data(conv.data['data'])} às {horario}."
             + (
                 f"\nCódigo da reserva: {agendamento_id}."
                 if agendamento_id

@@ -1,0 +1,82 @@
+from ana_feegow.ana.conversation import Conversation
+from ana_feegow.ana.decision import decidir
+from ana_feegow.ana.executor import executar
+from ana_feegow.ana.knowledge import RESPOSTAS
+
+from ana_feegow.workflows.manager import dispatch
+
+from ana_feegow.services.availability_service import (
+    listar_horarios_disponiveis,
+)
+
+from ana_feegow.ana.service import identificar_servico
+
+from ana_feegow.services.agendamento_service import (
+    agendar_consulta,
+)
+
+from ana_feegow.tools.identify import identificar_paciente
+
+
+def responder(
+    telefone: str,
+    mensagem: str,
+):
+
+    conv = Conversation(telefone)
+
+    #
+    # ==========================================================
+    # FLUXOS EM ANDAMENTO TÊM PRIORIDADE ABSOLUTA
+    # ==========================================================
+    #
+
+    #
+    # ==========================================================
+    # A PARTIR DAQUI O WORKFLOW MANAGER ASSUME O CONTROLE
+    # ==========================================================
+    #
+
+    resposta = dispatch(
+        conv=conv,
+        telefone=telefone,
+        mensagem=mensagem,
+    )
+
+    if resposta:
+        return resposta
+
+    #
+    # ==========================================================
+    # DECISION ENGINE
+    # ==========================================================
+
+    # ==========================================================
+    #
+
+    decisao = decidir(mensagem)
+
+    if decisao.get("intencao") in RESPOSTAS:
+
+        resposta = executar(
+            decisao,
+            conv,
+        )
+
+        if resposta:
+            return resposta
+
+    resposta = executar(
+        decisao,
+        conv,
+    )
+
+    if (
+        resposta
+        and resposta != "Ainda não sei executar essa ação."
+    ):
+        return resposta
+
+    return (
+        "Não consegui entender sua solicitação."
+    )

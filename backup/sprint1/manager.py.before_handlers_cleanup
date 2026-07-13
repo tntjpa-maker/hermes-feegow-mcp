@@ -1,0 +1,52 @@
+from ana_feegow.workflows.agendamento import executar_agendamento
+
+
+WORKFLOWS = {
+    "appointment": executar_agendamento,
+}
+
+
+class WorkflowManager:
+
+    @staticmethod
+    def execute(
+        conv,
+        telefone: str,
+        mensagem: str,
+    ):
+
+        #
+        # Workflow ativo
+        #
+
+        if conv.workflow:
+
+            workflow = WORKFLOWS.get(conv.workflow)
+
+            if workflow:
+                return workflow(
+                    conv=conv,
+                    telefone=telefone,
+                    mensagem=mensagem,
+                )
+
+        #
+        # Descoberta de workflow
+        #
+
+        if conv.state in (
+            "aguardando_motivo",
+            "aguardando_data",
+            "aguardando_horario",
+            "cadastro_pendente",
+        ):
+
+            conv.set_workflow("appointment")
+
+            return executar_agendamento(
+                conv=conv,
+                telefone=telefone,
+                mensagem=mensagem,
+            )
+
+        return None

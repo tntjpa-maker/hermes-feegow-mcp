@@ -37,4 +37,12 @@ def agendar_consulta(
         "sys_user": CLINIC["sys_user"],
     }
 
+    import json
+    from pathlib import Path
+
+    Path("logs").mkdir(exist_ok=True)
+
+    with open("logs/agendamento_payload.json", "w", encoding="utf-8") as f:
+        json.dump(dados, f, indent=2, ensure_ascii=False)
+
     return criar_agendamento(dados)
