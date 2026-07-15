@@ -1,0 +1,50 @@
+from fastmcp import FastMCP
+import traceback
+from pathlib import Path
+
+from ana_feegow.ana.dialog import responder
+
+LOG = Path("/tmp/mcp_error.log")
+
+mcp = FastMCP("magnolia-clinic")
+
+
+@mcp.tool
+def atender_paciente(
+    telefone: str,
+    mensagem: str,
+    historico_recente: str = "",
+):
+    """
+    PONTO DE ENTRADA ÚNICO DA ANA.
+
+    Toda mensagem da paciente deve passar por esta ferramenta.
+
+    Parâmetros:
+    - telefone: telefone da paciente.
+    - mensagem: mensagem atual.
+    - historico_recente: mensagens recentes relevantes da conversa,
+      incluindo as últimas respostas da ANA. Sempre envie quando houver
+      mensagens anteriores, para permitir compreender respostas como
+      "sim", "pode explicar", "pode enviar" ou "esse horário".
+
+    O assistente não deve responder diretamente à paciente.
+    """
+
+    try:
+        return responder(
+            telefone=telefone,
+            mensagem=mensagem,
+            historico_recente=historico_recente,
+        )
+
+    except Exception:
+        with open(LOG, "a") as f:
+            traceback.print_exc(file=f)
+            f.write("\n-----------------------------\n")
+
+        raise
+
+
+if __name__ == "__main__":
+    mcp.run()

@@ -2,15 +2,26 @@ from ana_feegow.ana.conversation import Conversation
 from ana_feegow.ana.decision import decidir
 from ana_feegow.ana.knowledge import RESPOSTAS
 from ana_feegow.workflows.manager import WorkflowManager
+from ana_feegow.conversation.router import ConversationRouter
 
+from ana_feegow.conversation.knowledge_service import KnowledgeService
 
 
 def responder(
     telefone: str,
     mensagem: str,
-    historico_recente: str = "",
 ):
+    print("\n### MCP BUILD 2026-07-13 13:35 ###\n")
     conv = Conversation(telefone)
+
+    print("=" * 60)
+    print("MENSAGEM :", mensagem)
+    print("TELEFONE :", telefone)
+    print("WORKFLOW :", conv.workflow)
+    print("STATE    :", conv.state)
+    print("DATA     :", conv.data)
+    print("=" * 60)
+
 
     if conv.human_mode:
         return None
@@ -22,16 +33,13 @@ def responder(
     )
 
     if resposta is not None:
-        conv.update_context("ultima_resposta", resposta)
         return resposta
 
     decisao = decidir(mensagem)
     intencao = decisao.get("intencao")
 
     if intencao in RESPOSTAS:
-        resposta = RESPOSTAS[intencao]
-        conv.update_context("ultima_resposta", resposta)
-        return resposta
+        return RESPOSTAS[intencao]
 
     resposta = WorkflowManager.start(
         decisao=decisao,
@@ -42,6 +50,4 @@ def responder(
     if resposta is not None:
         return resposta
 
-    resposta = "Não consegui entender sua solicitação."
-    conv.update_context("ultima_resposta", resposta)
-    return resposta
+    return "Não consegui entender sua solicitação."

@@ -7,5 +7,6 @@ Requires-Dist: requests>=2.32.0
 Requires-Dist: pydantic>=2.7.0
 Requires-Dist: pydantic-settings>=2.2.0
 Requires-Dist: mcp>=1.0.0
+Requires-Dist: fastmcp>=3.4.3
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0.0; extra == "dev"

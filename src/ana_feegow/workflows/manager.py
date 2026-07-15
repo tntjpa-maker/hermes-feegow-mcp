@@ -62,9 +62,13 @@ class WorkflowManager:
         if acao == "TIPO_CONSULTA":
             conv.set_workflow("appointment")
             conv.update("motivo", intencao)
-            conv.next("aguardando_data")
+            conv.next("buscando_primeira_vaga")
 
-            return "Qual dia você prefere para a consulta?"
+            return executar_agendamento(
+                conv=conv,
+                telefone=telefone,
+                mensagem="qualquer dia",
+            )
 
         if acao == "HUMANO":
             conv.enable_human()

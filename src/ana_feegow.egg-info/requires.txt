@@ -2,6 +2,7 @@ requests>=2.32.0
 pydantic>=2.7.0
 pydantic-settings>=2.2.0
 mcp>=1.0.0
+fastmcp>=3.4.3
 
 [dev]
 pytest>=8.0.0

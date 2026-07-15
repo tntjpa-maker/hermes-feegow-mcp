@@ -1,0 +1,10 @@
+from pathlib import Path
+
+BASE = Path(__file__).resolve().parents[3] / "data" / "knowledge" / "BASE_UNICA_ANA.md"
+
+
+class KnowledgeMarkdown:
+
+    @classmethod
+    def load(cls):
+        return BASE.read_text(encoding="utf-8")

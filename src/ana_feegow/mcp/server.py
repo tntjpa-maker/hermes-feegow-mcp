@@ -10,36 +10,38 @@ BASE = Path(__file__).resolve().parents[3] / "data" / "knowledge" / "BASE_UNICA_
 mcp = FastMCP("magnolia-clinic")
 
 
+from ana_feegow.conversation.knowledge_service import KnowledgeService
+
 @mcp.tool
-def consultar_base_conhecimento() -> str:
+def consultar_base_conhecimento(pergunta: str) -> str:
     """
-    FONTE OFICIAL da Clínica Magnólia.
+    Base Oficial da Clínica Magnólia.
 
-    Use esta ferramenta SEMPRE que a pergunta envolver:
-    - valores
-    - consultas
-    - procedimentos
-    - convênios
-    - pagamentos
-    - endereço
-    - horários
-    - retorno
-    - serviços
-    - informações institucionais
+    Utilize esta ferramenta SEMPRE que a paciente fizer perguntas sobre:
 
-    O texto retornado é a única fonte de verdade.
+    • clínica
+    • médica
+    • consultas
+    • valores
+    • procedimentos
+    • DIU
+    • implantes
+    • pagamento
+    • convênio
+    • endereço
+    • retorno
+    • horários
+    • políticas
+    • orientações
+    • dúvidas gerais
 
-    Extraia literalmente a informação correspondente.
+    Envie SEMPRE a pergunta completa da paciente.
 
-    Nunca responda por conhecimento próprio.
+    Nunca resuma a pergunta.
 
-    Nunca estime valores.
-
-    Nunca diga "pode variar".
-
-    Se a informação existir no documento, utilize exatamente o conteúdo encontrado.
+    A ferramenta localizará automaticamente o capítulo correto da Base Oficial.
     """
-    return BASE.read_text(encoding="utf-8")
+    return KnowledgeService.search(pergunta)
 
 
 @mcp.tool
@@ -48,7 +50,49 @@ def atender_paciente(
     mensagem: str,
     historico_recente: str = "",
 ):
+    print("=" * 80)
+    print("MCP -> atender_paciente")
+    print("telefone:", telefone)
+    print("mensagem:", mensagem)
+    print("historico:", historico_recente)
+    print("=" * 80)
+
+    """
+    ÚNICO ponto de entrada operacional da ANA.
+
+    Utilize esta ferramenta SEMPRE que a paciente:
+
+    • desejar agendar
+    • perguntar sobre disponibilidade
+    • escolher datas
+    • escolher horários
+    • confirmar horários
+    • remarcar
+    • cancelar
+    • responder perguntas feitas anteriormente pela ANA
+    • enviar informações para cadastro
+    • responder "sim", "não", "pode", "esse", "qualquer horário", "próxima semana", etc.
+
+    Nunca responda essas mensagens diretamente.
+
+    Nunca diga que irá consultar agenda.
+
+    Nunca diga que encontrou horários.
+
+    Nunca invente disponibilidade.
+
+    Sempre encaminhe para esta ferramenta.
+
+    Envie sempre:
+
+    telefone
+    mensagem
+    historico_recente
+    """
+
     try:
+        print(f"[MCP] telefone={telefone} mensagem={mensagem!r}")
+
         return responder(
             telefone=telefone,
             mensagem=mensagem,
