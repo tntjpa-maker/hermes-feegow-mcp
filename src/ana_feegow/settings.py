@@ -1,0 +1,3 @@
+
+SECRETARIA_WHATSAPP = "5521985929056"
+WHATSAPP_WEBHOOK = "http://localhost:3000/send-message"

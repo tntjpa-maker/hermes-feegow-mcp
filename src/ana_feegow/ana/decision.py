@@ -87,7 +87,7 @@ def decidir(mensagem: str) -> dict:
         "primeira consulta",
     ]):
         return {
-            "acao": "TIPO_CONSULTA",
+            "acao": "AGENDAR",
             "intencao": "primeira_consulta",
         }
 
@@ -95,7 +95,7 @@ def decidir(mensagem: str) -> dict:
         "retorno",
     ]):
         return {
-            "acao": "TIPO_CONSULTA",
+            "acao": "AGENDAR",
             "intencao": "retorno",
         }
 

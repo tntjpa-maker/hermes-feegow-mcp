@@ -1,0 +1,10 @@
+from ana_feegow.client import FeegowClient
+
+client = FeegowClient()
+
+
+def criar_agendamento(dados):
+    return client.post(
+        "/appoints/new-appoint",
+        dados,
+    )

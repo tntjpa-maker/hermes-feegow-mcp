@@ -10,12 +10,16 @@ def _calcular_disponibilidade(
     duracao_consulta,
     data,
 ):
+    """
+    Retorna todos os horários livres de um dia.
+    Utilizado pelo calendar_service.
+    """
+
     chave = data.strftime("%d-%m-%Y")
-    weekday = data.weekday()
 
-    horarios = []
+    resultado = []
 
-    for periodo in SCHEDULE.get(weekday, []):
+    for periodo in SCHEDULE.get(data.weekday(), []):
 
         slots = gerar_slots(
             periodo["inicio"],
@@ -66,54 +70,82 @@ def _calcular_disponibilidade(
                     break
 
             if livre:
-                horarios.append(slot.inicio)
+                resultado.append(slot.inicio)
 
-    return horarios
+    return resultado
 
 
 def listar_horarios_disponiveis(
-    tipo_consulta: str,
-    data_inicio: str,
-    data_fim: str,
-    dias_busca: int = 30,
+    tipo_consulta,
+    data_inicio,
+    data_fim,
 ):
 
     dados = consultar_horarios(
         tipo_consulta,
         data_inicio,
-        (
-            datetime.strptime(data_inicio, "%Y-%m-%d")
-            + timedelta(days=dias_busca)
-        ).strftime("%Y-%m-%d"),
+        data_fim,
     )
 
     agenda = dados["agenda"]
     duracao_consulta = dados["duracao_consulta"]
 
-    solicitada = datetime.strptime(data_inicio, "%Y-%m-%d")
-
-    for i in range(dias_busca + 1):
-
-        data = solicitada + timedelta(days=i)
-
-        horarios = _calcular_disponibilidade(
-            agenda,
-            duracao_consulta,
-            data,
+    try:
+        data = datetime.strptime(
+            data_inicio,
+            "%Y-%m-%d",
+        )
+    except ValueError:
+        data = datetime.strptime(
+            data_inicio,
+            "%d-%m-%Y",
         )
 
-        if horarios:
-
-            return {
-                "requested_date": solicitada.strftime("%d-%m-%Y"),
-                "available_date": data.strftime("%d-%m-%Y"),
-                "same_day": i == 0,
-                "slots": horarios,
-            }
+    slots = _calcular_disponibilidade(
+        agenda=agenda,
+        duracao_consulta=duracao_consulta,
+        data=data,
+    )
 
     return {
-        "requested_date": solicitada.strftime("%d-%m-%Y"),
-        "available_date": None,
-        "same_day": False,
-        "slots": [],
+        "requested_date": data_inicio,
+        "available_date": data_inicio,
+        "same_day": True,
+        "slots": slots,
+    }
+
+
+def buscar_disponibilidade(
+    tipo_consulta,
+    data_inicio,
+    dias_busca=30,
+):
+    """
+    Novo motor único de disponibilidade.
+    Será utilizado por Agendamento e Remarcação.
+    """
+
+    from ana_feegow.services.calendar_service import listar_datas_disponiveis
+
+    datas = listar_datas_disponiveis(
+        tipo_consulta=tipo_consulta,
+        data_inicio=data_inicio,
+        dias_busca=dias_busca,
+    )
+
+    if not datas:
+        return {
+            "requested_date": data_inicio,
+            "available_date": None,
+            "same_day": False,
+            "slots": [],
+        }
+
+    primeira = next(iter(datas))
+
+    return {
+        "requested_date": data_inicio,
+        "available_date": primeira,
+        "same_day": primeira == data_inicio,
+        "slots": datas[primeira],
     }

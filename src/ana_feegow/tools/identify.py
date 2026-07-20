@@ -9,7 +9,13 @@ def identificar_paciente(
 ):
     client = client or FeegowClient()
 
-    telefone = ''.join(c for c in telefone if c.isdigit())
+    # Mantém apenas os dígitos
+    telefone = "".join(filter(str.isdigit, telefone or ""))
+
+    # WhatsApp/Hermes envia normalmente +55DDDNÚMERO
+    # O Feegow armazena apenas DDD+NÚMERO.
+    if telefone.startswith("55") and len(telefone) > 11:
+        telefone = telefone[2:]
 
     resultado = client.get(
         "/patient/list",

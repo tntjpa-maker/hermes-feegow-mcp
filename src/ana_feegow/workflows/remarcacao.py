@@ -1,76 +1,110 @@
-from datetime import datetime, timedelta
+from ana_feegow.services.list_appointments_service import listar_consultas_futuras
+from ana_feegow.services.availability_service import buscar_disponibilidade
 
-from ana_feegow.tools.availability import consultar_horarios
-from ana_feegow.services.agendamento_service import agendar_consulta
-from ana_feegow.appointments.update_status import atualizar_status
-from ana_feegow.workflows.event_store import registrar_evento
-
-
-def pode_remarcar(data: str, horario: str):
-    consulta = datetime.strptime(
-        f"{data} {horario}",
-        "%d-%m-%Y %H:%M:%S"
-    )
-
-    return consulta - datetime.now() >= timedelta(hours=2)
-
-
-def consultar_opcoes(
-    tipo_consulta: str,
-    data_inicio: str,
-    data_fim: str,
-):
-    return consultar_horarios(
-        tipo_consulta=tipo_consulta,
-        data_inicio=data_inicio,
-        data_fim=data_fim,
-    )
-
-
-def remarcar_consulta(
-    agendamento_antigo: int,
-    paciente_id: int,
-    tipo_consulta: str,
-    nova_data: str,
-    novo_horario: str,
-    celular: str,
-    email: str = "",
-):
-
-    if not pode_remarcar(nova_data, novo_horario):
-        return {
-            "success": False,
-            "motivo": "prazo_inferior_duas_horas",
-            "acao": "encaminhar_secretaria",
-        }
-
-    novo = agendar_consulta(
-        paciente_id=paciente_id,
-        tipo_consulta=tipo_consulta,
-        data=nova_data,
-        horario=novo_horario,
-        celular=celular,
-        email=email,
-        retorno=False,
-        notas="Remarcação realizada pela ANA",
-    )
-
-    atualizar_status(
-        agendamento_id=agendamento_antigo,
-        status_id=15,
-        observacao="Consulta remarcada automaticamente",
-    )
-
-    registrar_evento(
-        agendamento_id=agendamento_antigo,
-        tipo="consulta_remarcada",
-        dados={
-            "novo_agendamento": novo["content"]["agendamento_id"],
-        },
-    )
-
-    return {
-        "success": True,
-        "agendamento_antigo": agendamento_antigo,
-        "agendamento_novo": novo["content"]["agendamento_id"],
+def _tipo_por_procedimento(procedimento_id: int) -> str:
+    mapa = {
+        35: "consulta_presencial",
+        36: "consulta_hibrida",
+        37: "consulta_online",
     }
+    return mapa.get(procedimento_id, "consulta_presencial")
+
+from ana_feegow.services.remarcacao_service import remarcar_consulta
+
+
+def executar_remarcacao(conv, telefone, mensagem):
+
+    #
+    # Escolha da consulta
+    #
+    if conv.state == "inicio":
+
+        consultas = listar_consultas_futuras(telefone)
+
+        if not consultas:
+            conv.reset()
+            return "Não encontrei consultas futuras para remarcação."
+
+        conv.update("consultas", consultas)
+        conv.next("aguardando_consulta")
+
+        texto = "Encontrei estas consultas:\n\n"
+
+        for i, c in enumerate(consultas, 1):
+            texto += f"{i}. {c['data']} às {c['horario']}\n"
+
+        texto += "\nQual delas você deseja remarcar?"
+
+        return texto
+
+    #
+    # Consulta escolhida
+    #
+    if conv.state == "aguardando_consulta":
+
+        try:
+            indice = int(mensagem.strip()) - 1
+        except ValueError:
+            return "Informe apenas o número da consulta."
+
+        consultas = conv.data["consultas"]
+
+        if indice < 0 or indice >= len(consultas):
+            return "Consulta inválida."
+
+        consulta = consultas[indice]
+
+        conv.update("agendamento_id", consulta["agendamento_id"])
+        conv.update("procedimento_id", consulta["procedimento_id"])
+
+        from datetime import date
+
+        horarios = buscar_disponibilidade(
+            tipo_consulta=_tipo_por_procedimento(consulta["procedimento_id"]),
+            data_inicio=date.today().isoformat(),
+        )
+
+        conv.update("horarios", horarios)
+        conv.next("aguardando_novo_horario")
+
+        if not horarios["slots"]:
+            return "Não encontrei horários disponíveis."
+
+        texto = ""
+
+        if horarios["same_day"]:
+            texto += (
+                f"Tenho disponibilidade em {horarios['available_date']}:\n\n"
+            )
+        else:
+            texto += (
+                f"A próxima disponibilidade é {horarios['available_date']}:\n\n"
+            )
+
+        texto += "\n".join(f"• {h}" for h in horarios["slots"])
+        texto += "\n\nQual horário você prefere?"
+
+        return texto
+
+    #
+    # Horário escolhido
+    #
+    if conv.state == "aguardando_novo_horario":
+
+        horarios = conv.data["horarios"]
+
+        resultado = remarcar_consulta(
+            agendamento_id=conv.data["agendamento_id"],
+            data=horarios["available_date"],
+            horario=mensagem.strip() + ":00",
+        )
+
+        conv.reset()
+
+        return (
+            "Consulta remarcada com sucesso! 😊\n\n"
+            f"Nova data: {horarios['available_date']}\n"
+            f"Horário: {mensagem}"
+        )
+
+    return None
