@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+PROJECT_DIR="/opt/data/workspace/hermes-feegow-mcp"
+export PYTHONPATH="$PROJECT_DIR/src"
+cd "$PROJECT_DIR"
+
+WEBHOOK_PID=""
+GATEWAY_PID=""
+
+cleanup() {
+    [ -z "$WEBHOOK_PID" ] || kill "$WEBHOOK_PID" 2>/dev/null || true
+    [ -z "$GATEWAY_PID" ] || kill "$GATEWAY_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+uv run uvicorn ana_feegow.webhooks.app:app \
+    --host 0.0.0.0 \
+    --port 9120 \
+    --env-file .env &
+WEBHOOK_PID=$!
+
+if [ "${HERMES_START_GATEWAY:-0}" = "1" ]; then
+    hermes gateway run &
+    GATEWAY_PID=$!
+fi
+
+exec hermes dashboard --host 0.0.0.0 --port 9119 --skip-build
