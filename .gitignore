@@ -15,6 +15,7 @@ data/conversations/
 data/*.json
 
 # Local files
+.env
 horarios.html
 
 # OS
