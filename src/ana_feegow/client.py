@@ -1,5 +1,7 @@
+import os
+import sys
 import time
-from typing import Any, Dict, Optional
+from typing import Dict
 
 import requests
 
@@ -25,18 +27,18 @@ class FeegowClient:
             "Content-Type": "application/json",
         }
 
+    @staticmethod
+    def _debug(message: str):
+        if os.getenv("FEEGOW_DEBUG", "").lower() in {"1", "true", "yes"}:
+            print(message, file=sys.stderr)
+
     def request(self, method: str, endpoint: str, params=None, json=None):
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         last_error = None
 
         for attempt in range(1, self.retries + 1):
             try:
-                print("=" * 60)
-                print("FEEGOW REQUEST")
-                print("METHOD:", method)
-                print("URL:", url)
-                print("PARAMS:", params)
-                print("JSON:", json)
+                self._debug(f"FEEGOW {method.upper()} {url} tentativa={attempt}")
 
                 response = requests.request(
                     method=method.upper(),
@@ -47,17 +49,18 @@ class FeegowClient:
                     timeout=self.timeout,
                 )
 
-                print("STATUS:", response.status_code)
-                print("BODY:", response.text[:1000])
+                self._debug(f"FEEGOW status={response.status_code}")
 
                 if response.status_code in (401, 403):
-                    raise FeegowAuthError(f"Erro de autenticação Feegow: {response.status_code}")
+                    raise FeegowAuthError(
+                        f"Erro de autenticação Feegow: {response.status_code}"
+                    )
 
                 if response.status_code >= 400:
                     raise FeegowAPIError(
                         response.status_code,
                         response.text,
-                        {"url": url, "params": params, "json": json},
+                        {"url": url},
                     )
 
                 try:
@@ -67,16 +70,22 @@ class FeegowClient:
 
             except requests.Timeout as exc:
                 last_error = exc
-                time.sleep(0.5 * attempt)
+                if attempt < self.retries:
+                    time.sleep(0.5 * attempt)
 
             except requests.RequestException as exc:
                 last_error = exc
-                time.sleep(0.5 * attempt)
+                if attempt < self.retries:
+                    time.sleep(0.5 * attempt)
 
         if isinstance(last_error, requests.Timeout):
             raise FeegowTimeoutError(f"Timeout ao acessar Feegow: {url}")
 
-        raise FeegowAPIError(0, f"Falha ao acessar Feegow após {self.retries} tentativas.", {"url": url})
+        raise FeegowAPIError(
+            0,
+            f"Falha ao acessar Feegow após {self.retries} tentativas.",
+            {"url": url},
+        )
 
     def get(self, endpoint: str, params=None):
         return self.request("GET", endpoint, params=params)
