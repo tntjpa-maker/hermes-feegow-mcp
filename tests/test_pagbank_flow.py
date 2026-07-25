@@ -10,6 +10,10 @@ from ana_feegow.webhooks.pagbank_handler import PagBankHandler
 from ana_feegow.webhooks.sync_handler import SyncHandler
 from ana_feegow.webhooks.sync_store import SyncStore
 
+# eventTypeId=7 / type="niteroi" -> consulta_presencial (SERVICES["consulta_presencial"]["valor"] = 35000)
+# Sinal = 20% -> 7000 centavos (R$70,00).
+SINAL_CONSULTA_PRESENCIAL_CENTAVOS = 7000
+
 
 def cal_payload(trigger="BOOKING_CREATED"):
     return {
@@ -71,7 +75,6 @@ def test_booking_created_checkout_paid_feegow_e_idempotencia(tmp_path):
     session = FakeSession()
     pagbank = PagBankClient(
         token="token",
-        amount=100,
         webhook_url="https://integracao.example/webhooks/pagbank",
         public_base_url="https://integracao.example",
         session=session,
@@ -83,7 +86,7 @@ def test_booking_created_checkout_paid_feegow_e_idempotencia(tmp_path):
     assert result["status"] == "processed"
     assert result["payment_url"] == "https://sandbox.pagbank.test/pay"
     assert session.payload["reference_id"] == "cal-uid-pagbank-1"
-    assert session.payload["items"][0]["unit_amount"] == 100
+    assert session.payload["items"][0]["unit_amount"] == SINAL_CONSULTA_PRESENCIAL_CENTAVOS
     assert store.get_mapping("cal-uid-pagbank-1") is None
 
     notification = {

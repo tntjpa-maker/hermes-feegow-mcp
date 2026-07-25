@@ -4,6 +4,8 @@ from urllib.parse import urlencode
 
 import requests
 
+from ana_feegow.settings.services import SERVICES
+
 
 @dataclass(frozen=True)
 class PagBankCheckout:
@@ -11,12 +13,19 @@ class PagBankCheckout:
     payment_url: str
 
 
+def _valor_sinal_centavos(tipo_consulta: str) -> int:
+    if tipo_consulta not in SERVICES:
+        raise ValueError(f"Tipo de consulta desconhecido: {tipo_consulta}")
+    # Sinal = 20% do valor da consulta (regra confirmada no doc 14_Lacunas,
+    # perguntas 30-31: sinal é só sobre consulta, não sobre procedimento/pacote).
+    return round(SERVICES[tipo_consulta]["valor"] * 0.20)
+
+
 class PagBankClient:
     def __init__(
         self,
         token=None,
         base_url=None,
-        amount=None,
         webhook_url=None,
         public_base_url=None,
         timeout=20,
@@ -27,7 +36,6 @@ class PagBankClient:
             base_url
             or os.getenv("PAGBANK_BASE_URL", "https://sandbox.api.pagseguro.com")
         ).rstrip("/")
-        self.amount = int(amount or os.getenv("PAGBANK_DEFAULT_AMOUNT", "100"))
         self.webhook_url = webhook_url or os.getenv("PAGBANK_WEBHOOK_URL", "")
         self.public_base_url = (
             public_base_url
@@ -43,8 +51,6 @@ class PagBankClient:
             raise RuntimeError("PAGBANK_WEBHOOK_URL não configurada.")
         if not self.public_base_url:
             raise RuntimeError("PUBLIC_BASE_URL não configurada.")
-        if self.amount <= 0:
-            raise ValueError("PAGBANK_DEFAULT_AMOUNT deve ser maior que zero.")
 
     @property
     def headers(self):
@@ -71,6 +77,8 @@ class PagBankClient:
         if len(booking.uid) > 64:
             raise ValueError("UID do Cal.com excede 64 caracteres.")
 
+        valor_sinal_centavos = _valor_sinal_centavos(booking.tipo_consulta)
+
         return_query = urlencode({"uid": booking.uid})
         return_url = f"{self.public_base_url}/pagamento/retorno?{return_query}"
         payload = {
@@ -85,9 +93,9 @@ class PagBankClient:
             "items": [
                 {
                     "reference_id": booking.tipo_consulta,
-                    "name": "Consulta Clínica Magnólia",
+                    "name": "Sinal de reserva - Clínica Magnólia",
                     "quantity": 1,
-                    "unit_amount": self.amount,
+                    "unit_amount": valor_sinal_centavos,
                 }
             ],
             "redirect_url": return_url,

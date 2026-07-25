@@ -3,6 +3,8 @@ import json
 
 from ana_feegow.webhooks.cal_parser import CalBooking
 
+RESERVA_INDISPONIVEL_PARA_PAGAMENTO = {"CANCELED", "EXPIRED", "REPLACED"}
+
 
 class PagBankHandler:
     def __init__(self, store, service):
@@ -57,6 +59,18 @@ class PagBankHandler:
 
         if not pending:
             raise LookupError("Pagamento sem reserva Cal.com pendente.")
+
+        if pending["payment_status"] in RESERVA_INDISPONIVEL_PARA_PAGAMENTO:
+            self.store.mark_event(key, "PAGBANK_PAID_APOS_CANCELAMENTO", uid)
+            return {
+                "status": "revisao_manual",
+                "payment_status": status,
+                "uid": uid,
+                "motivo": (
+                    f"reserva estava '{pending['payment_status']}' "
+                    "quando o pagamento chegou"
+                ),
+            }
 
         booking = CalBooking(**pending["booking"])
         appointment_id = self.service.create_booking(booking)
