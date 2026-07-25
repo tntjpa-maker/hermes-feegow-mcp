@@ -105,12 +105,25 @@ def create_app(
         if not configured_token:
             raise HTTPException(503, "Token PagBank não configurado")
         if not x_authenticity_token:
+            logger.warning(
+                "Webhook PagBank rejeitado (401): header x-authenticity-token "
+                "ausente. corpo=%s bytes, headers recebidos=%s",
+                len(raw),
+                sorted(request.headers.keys()),
+            )
             raise HTTPException(401, "Assinatura PagBank ausente")
 
         expected = hashlib.sha256(
             configured_token.encode() + b"-" + raw
         ).hexdigest()
         if not hmac.compare_digest(expected, x_authenticity_token):
+            logger.warning(
+                "Webhook PagBank rejeitado (401): assinatura não bateu. "
+                "corpo=%s bytes, esperado[:8]=%s, recebido[:8]=%s",
+                len(raw),
+                expected[:8],
+                x_authenticity_token[:8],
+            )
             raise HTTPException(401, "Assinatura PagBank inválida")
 
         try:
