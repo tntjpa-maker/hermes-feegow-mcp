@@ -35,3 +35,7 @@ Thumbs.db
 # Ruff
 .ruff_cache/
 .env
+
+# Banco com dados de pacientes (CPF, nome, telefone, nascimento) - nunca versionar
+data/cal_feegow_sync.db
+data/*.db

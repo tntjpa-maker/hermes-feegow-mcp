@@ -43,6 +43,12 @@ class SyncStore:
                 );
                 """
             )
+            self._ensure_transaction_column(db)
+
+    def _ensure_transaction_column(self, db):
+        existentes = {row["name"] for row in db.execute("PRAGMA table_info(booking_map)")}
+        if "pagbank_transaction_id" not in existentes:
+            db.execute("ALTER TABLE booking_map ADD COLUMN pagbank_transaction_id TEXT")
 
     def event_processed(self, event_key: str) -> bool:
         with self._connect() as db:
@@ -59,19 +65,27 @@ class SyncStore:
                 (event_key, trigger, uid),
             )
 
-    def save_mapping(self, uid: str, booking_id, appointment_id: int, status: str):
+    def save_mapping(
+        self,
+        uid: str,
+        booking_id,
+        appointment_id: int,
+        status: str,
+        pagbank_transaction_id: str = None,
+    ):
         with self._connect() as db:
             db.execute(
                 """
-                INSERT INTO booking_map(cal_uid, cal_booking_id, feegow_appointment_id, status)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO booking_map(cal_uid, cal_booking_id, feegow_appointment_id, status, pagbank_transaction_id)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(cal_uid) DO UPDATE SET
                     cal_booking_id=excluded.cal_booking_id,
                     feegow_appointment_id=excluded.feegow_appointment_id,
                     status=excluded.status,
+                    pagbank_transaction_id=COALESCE(excluded.pagbank_transaction_id, booking_map.pagbank_transaction_id),
                     updated_at=CURRENT_TIMESTAMP
                 """,
-                (uid, booking_id, appointment_id, status),
+                (uid, booking_id, appointment_id, status, pagbank_transaction_id),
             )
 
     def get_mapping(self, *uids: str):

@@ -33,6 +33,13 @@ class PagBankHandler:
             or ""
         )
 
+    @staticmethod
+    def charge_id(payload: dict) -> str:
+        charges = payload.get("charges") or []
+        if charges:
+            return str(charges[0].get("id") or "")
+        return str(payload.get("id") or "")
+
     def handle(self, payload: dict):
         key = self.event_key(payload)
         uid = self.reference_id(payload)
@@ -79,6 +86,7 @@ class PagBankHandler:
             booking.booking_id,
             appointment_id,
             "scheduled",
+            pagbank_transaction_id=self.charge_id(payload),
         )
         self.store.update_pending_status(uid, "PAID")
         self.store.mark_event(key, "PAGBANK_PAID", uid)
