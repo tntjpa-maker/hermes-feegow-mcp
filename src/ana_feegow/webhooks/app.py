@@ -43,6 +43,7 @@ def _default_pagbank_handler():
     return PagBankHandler(
         _default_store(),
         FeegowSyncService(),
+        PagBankClient(),
     )
 
 
@@ -104,27 +105,38 @@ def create_app(
         configured_token = pagbank_token or os.getenv("PAGBANK_TOKEN", "")
         if not configured_token:
             raise HTTPException(503, "Token PagBank não configurado")
-        if not x_authenticity_token:
+
+        # O PagBank tem um problema conhecido (relatado por outros
+        # integradores, sem correção oficial documentada) de às vezes não
+        # enviar o header x-authenticity-token em notificações de Sandbox.
+        # Se o header vier e não bater, é sinal de adulteração - rejeitamos
+        # na hora. Se o header simplesmente não vier, não confiamos direto
+        # no corpo: o handler vai reconfirmar o status direto na API do
+        # PagBank (com o nosso token) antes de aceitar qualquer pagamento.
+        assinatura_confiavel = False
+        if x_authenticity_token:
+            expected = hashlib.sha256(
+                configured_token.encode() + b"-" + raw
+            ).hexdigest()
+            if hmac.compare_digest(expected, x_authenticity_token):
+                assinatura_confiavel = True
+            else:
+                logger.warning(
+                    "Webhook PagBank rejeitado (401): assinatura não bateu. "
+                    "corpo=%s bytes, esperado[:8]=%s, recebido[:8]=%s",
+                    len(raw),
+                    expected[:8],
+                    x_authenticity_token[:8],
+                )
+                raise HTTPException(401, "Assinatura PagBank inválida")
+        else:
             logger.warning(
-                "Webhook PagBank rejeitado (401): header x-authenticity-token "
-                "ausente. corpo=%s bytes, headers recebidos=%s",
+                "Webhook PagBank sem header x-authenticity-token (bug conhecido "
+                "do PagBank Sandbox) - reconfirmando direto na API do PagBank "
+                "antes de aceitar. corpo=%s bytes, headers recebidos=%s",
                 len(raw),
                 sorted(request.headers.keys()),
             )
-            raise HTTPException(401, "Assinatura PagBank ausente")
-
-        expected = hashlib.sha256(
-            configured_token.encode() + b"-" + raw
-        ).hexdigest()
-        if not hmac.compare_digest(expected, x_authenticity_token):
-            logger.warning(
-                "Webhook PagBank rejeitado (401): assinatura não bateu. "
-                "corpo=%s bytes, esperado[:8]=%s, recebido[:8]=%s",
-                len(raw),
-                expected[:8],
-                x_authenticity_token[:8],
-            )
-            raise HTTPException(401, "Assinatura PagBank inválida")
 
         try:
             payload = json.loads(raw)
@@ -132,12 +144,17 @@ def create_app(
             raise HTTPException(400, "JSON inválido") from exc
 
         try:
-            result = (pagbank_handler or _default_pagbank_handler()).handle(payload)
+            result = (pagbank_handler or _default_pagbank_handler()).handle(
+                payload, assinatura_confiavel=assinatura_confiavel
+            )
             logger.info("Webhook PagBank processado: %s", result)
             return result
         except (ValueError, LookupError) as exc:
             logger.warning("Webhook PagBank rejeitado (422): %s", exc)
             raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            logger.error("Webhook PagBank falhou (502): %s", exc)
+            raise HTTPException(502, "Falha ao confirmar pagamento, tente novamente") from exc
 
     @api.get("/pagamento/iniciar")
     def iniciar_pagamento(uid: str = Query(min_length=1)):

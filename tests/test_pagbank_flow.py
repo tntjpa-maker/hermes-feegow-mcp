@@ -1,6 +1,7 @@
 import hashlib
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ana_feegow.webhooks.app import create_app
@@ -53,6 +54,18 @@ class FakeSession:
     def post(self, url, **kwargs):
         self.payload = kwargs["json"]
         return FakeResponse()
+
+
+class FakePaymentClient:
+    """Simula o PagBankClient só para o método usado na reconfirmação."""
+
+    def __init__(self, pedido):
+        self.pedido = pedido
+        self.consultas = []
+
+    def consultar_pedido(self, order_id):
+        self.consultas.append(order_id)
+        return self.pedido
 
 
 class FakeFeegow:
@@ -111,7 +124,7 @@ def test_webhook_pagbank_valida_assinatura_e_redireciona(tmp_path):
     )
 
     class FakePagBankHandler:
-        def handle(self, payload):
+        def handle(self, payload, assinatura_confiavel=True):
             return {"status": "processed", "uid": payload["reference_id"]}
 
     client = TestClient(
@@ -145,3 +158,99 @@ def test_webhook_pagbank_valida_assinatura_e_redireciona(tmp_path):
     )
     assert redirect.status_code == 307
     assert redirect.headers["location"] == "https://sandbox.pagbank.test/pay"
+
+
+def test_pagbank_reconfirma_via_api_quando_assinatura_ausente(tmp_path):
+    # Simula o bug conhecido do PagBank Sandbox: a notificação chega sem o
+    # header x-authenticity-token. O handler não deve confiar no corpo
+    # recebido - só cria a consulta se a API do PagBank confirmar o
+    # pagamento de verdade quando consultada com o token da clínica.
+    store = SyncStore(str(tmp_path / "sync.db"))
+    booking = parse_booking(cal_payload())
+    store.save_pending_booking(booking, "CHEC_999", "https://sandbox.pagbank.test/pay")
+
+    pedido_confirmado_pela_api = {
+        "id": "ORDE_999",
+        "reference_id": "cal-uid-pagbank-1",
+        "charges": [{"id": "CHAR_999", "status": "PAID"}],
+    }
+    feegow = FakeFeegow()
+    payment_client = FakePaymentClient(pedido_confirmado_pela_api)
+    handler = PagBankHandler(store, feegow, payment_client)
+
+    # Payload "cru" da notificação, sem assinatura confiável - mesmo se
+    # viesse adulterado, só usamos o "id" para buscar o pedido de verdade.
+    payload_nao_confiavel = {"id": "ORDE_999", "reference_id": "cal-uid-pagbank-1"}
+
+    result = handler.handle(payload_nao_confiavel, assinatura_confiavel=False)
+
+    assert result["status"] == "processed"
+    assert result["feegow_appointment_id"] == 54
+    assert payment_client.consultas == ["ORDE_999"]
+    assert feegow.created == 1
+    assert store.get_mapping("cal-uid-pagbank-1")["pagbank_transaction_id"] == "CHAR_999"
+
+
+def test_pagbank_sem_assinatura_e_sem_cliente_de_pagamento_e_rejeitado(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    feegow = FakeFeegow()
+    handler = PagBankHandler(store, feegow)  # sem payment_client
+
+    with pytest.raises(ValueError):
+        handler.handle({"id": "ORDE_999"}, assinatura_confiavel=False)
+
+
+def test_webhook_pagbank_sem_header_reconfirma_no_handler(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    chamadas = []
+
+    class SpyPagBankHandler:
+        def handle(self, payload, assinatura_confiavel=True):
+            chamadas.append(assinatura_confiavel)
+            return {"status": "processed", "uid": payload.get("reference_id")}
+
+    client = TestClient(
+        create_app(
+            handler=object(),
+            secret="cal-secret",
+            pagbank_handler=SpyPagBankHandler(),
+            pagbank_token="pagbank-token",
+            store=store,
+        )
+    )
+    raw = json.dumps(
+        {"id": "ORDE_1", "reference_id": "cal-uid-x"},
+        separators=(",", ":"),
+    ).encode()
+
+    response = client.post(
+        "/webhooks/pagbank",
+        content=raw,
+        headers={"content-type": "application/json"},  # sem x-authenticity-token
+    )
+    assert response.status_code == 200
+    assert chamadas == [False]
+
+
+def test_webhook_pagbank_assinatura_errada_ainda_rejeita(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    client = TestClient(
+        create_app(
+            handler=object(),
+            secret="cal-secret",
+            pagbank_handler=object(),
+            pagbank_token="pagbank-token",
+            store=store,
+        )
+    )
+    raw = json.dumps({"reference_id": "cal-uid-x"}, separators=(",", ":")).encode()
+
+    response = client.post(
+        "/webhooks/pagbank",
+        content=raw,
+        headers={
+            "content-type": "application/json",
+            "x-authenticity-token": "assinatura-errada",
+        },
+    )
+    assert response.status_code == 401

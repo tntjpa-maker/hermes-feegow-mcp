@@ -144,3 +144,27 @@ class PagBankClient:
             checkout_id=checkout_id,
             payment_url=str(payment_url),
         )
+
+    def consultar_pedido(self, order_id: str) -> dict:
+        # Reconfirma o status de um pedido direto na API do PagBank, com o
+        # nosso próprio token - usado quando a notificação webhook chega sem
+        # o header x-authenticity-token (bug conhecido do PagBank Sandbox,
+        # sem correção oficial documentada) e por isso não pode ser
+        # confiada apenas pelo corpo recebido.
+        response = self.session.get(
+            f"{self.base_url}/orders/{order_id}",
+            headers=self.headers,
+            timeout=self.timeout,
+        )
+        if response.status_code >= 400:
+            corpo = (getattr(response, "text", "") or "")[:500]
+            logger.error(
+                "PagBank recusou a consulta do pedido %s: HTTP %s - %s",
+                order_id,
+                response.status_code,
+                corpo,
+            )
+            raise RuntimeError(
+                f"Falha ao consultar pedido PagBank: HTTP {response.status_code} - {corpo}"
+            )
+        return response.json()
