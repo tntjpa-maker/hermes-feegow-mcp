@@ -1,4 +1,6 @@
+import json
 import sqlite3
+from dataclasses import asdict
 from pathlib import Path
 
 
@@ -29,6 +31,15 @@ class SyncStore:
                     trigger_event TEXT NOT NULL,
                     cal_uid TEXT,
                     processed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS pending_bookings (
+                    cal_uid TEXT PRIMARY KEY,
+                    cal_booking_id INTEGER,
+                    booking_json TEXT NOT NULL,
+                    pagbank_checkout_id TEXT NOT NULL,
+                    payment_url TEXT NOT NULL,
+                    payment_status TEXT NOT NULL DEFAULT 'WAITING',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
                 """
             )
@@ -79,5 +90,64 @@ class SyncStore:
         with self._connect() as db:
             db.execute(
                 "UPDATE booking_map SET status=?, updated_at=CURRENT_TIMESTAMP WHERE cal_uid=?",
+                (status, uid),
+            )
+
+    def save_pending_booking(
+        self,
+        booking,
+        checkout_id: str,
+        payment_url: str,
+        payment_status: str = "WAITING",
+    ):
+        booking_json = json.dumps(asdict(booking), ensure_ascii=False)
+        with self._connect() as db:
+            db.execute(
+                """
+                INSERT INTO pending_bookings(
+                    cal_uid, cal_booking_id, booking_json,
+                    pagbank_checkout_id, payment_url, payment_status
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(cal_uid) DO UPDATE SET
+                    cal_booking_id=excluded.cal_booking_id,
+                    booking_json=excluded.booking_json,
+                    pagbank_checkout_id=excluded.pagbank_checkout_id,
+                    payment_url=excluded.payment_url,
+                    payment_status=excluded.payment_status,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (
+                    booking.uid,
+                    booking.booking_id,
+                    booking_json,
+                    checkout_id,
+                    payment_url,
+                    payment_status,
+                ),
+            )
+
+    def get_pending_booking(self, uid: str):
+        if not uid:
+            return None
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM pending_bookings WHERE cal_uid = ?",
+                (uid,),
+            ).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        result["booking"] = json.loads(result.pop("booking_json"))
+        return result
+
+    def update_pending_status(self, uid: str, status: str):
+        with self._connect() as db:
+            db.execute(
+                """
+                UPDATE pending_bookings
+                SET payment_status=?, updated_at=CURRENT_TIMESTAMP
+                WHERE cal_uid=?
+                """,
                 (status, uid),
             )
