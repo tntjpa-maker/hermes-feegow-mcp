@@ -5,6 +5,9 @@ PROJECT_DIR="/opt/data/workspace/hermes-feegow-mcp"
 export PYTHONPATH="$PROJECT_DIR/src"
 cd "$PROJECT_DIR"
 
+# Credencial do git fica no volume persistente - $HOME nao sobrevive a redeploy.
+git config --global credential.helper "store --file=/opt/data/.git-credentials" 2>/dev/null || true
+
 WEBHOOK_PID=""
 GATEWAY_PID=""
 
