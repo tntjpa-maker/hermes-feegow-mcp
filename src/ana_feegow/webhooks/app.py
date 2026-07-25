@@ -1,7 +1,9 @@
 import hashlib
 import hmac
 import json
+import logging
 import os
+import time
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -11,6 +13,11 @@ from ana_feegow.webhooks.pagbank_client import PagBankClient
 from ana_feegow.webhooks.pagbank_handler import PagBankHandler
 from ana_feegow.webhooks.sync_handler import SyncHandler
 from ana_feegow.webhooks.sync_store import SyncStore
+
+logger = logging.getLogger("webhooks")
+
+ESPERA_TENTATIVAS = 6
+ESPERA_INTERVALO_SEGUNDOS = 0.5
 
 
 def _db_path():
@@ -78,8 +85,11 @@ def create_app(
             raise HTTPException(400, "JSON inválido") from exc
 
         try:
-            return (handler or _default_handler()).handle(envelope)
+            result = (handler or _default_handler()).handle(envelope)
+            logger.info("Webhook Cal.com processado: %s", result)
+            return result
         except (ValueError, LookupError) as exc:
+            logger.warning("Webhook Cal.com rejeitado (422): %s", exc)
             raise HTTPException(422, str(exc)) from exc
 
     @api.post("/webhooks/pagbank")
@@ -106,15 +116,30 @@ def create_app(
             raise HTTPException(400, "JSON inválido") from exc
 
         try:
-            return (pagbank_handler or _default_pagbank_handler()).handle(payload)
+            result = (pagbank_handler or _default_pagbank_handler()).handle(payload)
+            logger.info("Webhook PagBank processado: %s", result)
+            return result
         except (ValueError, LookupError) as exc:
+            logger.warning("Webhook PagBank rejeitado (422): %s", exc)
             raise HTTPException(422, str(exc)) from exc
 
     @api.get("/pagamento/iniciar")
     def iniciar_pagamento(uid: str = Query(min_length=1)):
         selected_store = store or _default_store()
-        pending = selected_store.get_pending_booking(uid)
+
+        pending = None
+        for tentativa in range(ESPERA_TENTATIVAS):
+            pending = selected_store.get_pending_booking(uid)
+            if pending:
+                break
+            time.sleep(ESPERA_INTERVALO_SEGUNDOS)
+
         if not pending:
+            logger.warning(
+                "pagamento/iniciar: reserva %s não encontrada após %s tentativas",
+                uid,
+                ESPERA_TENTATIVAS,
+            )
             raise HTTPException(404, "Reserva pendente não encontrada")
         if pending["payment_status"] in {"CANCELED", "EXPIRED", "REPLACED"}:
             raise HTTPException(409, "Esta reserva não aceita mais pagamento")
