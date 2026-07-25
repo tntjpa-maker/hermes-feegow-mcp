@@ -2,6 +2,7 @@ from ana_feegow.errors import FeegowAPIError
 from ana_feegow.services.agendamento_service import agendar_consulta
 from ana_feegow.services.cancelamento_service import cancelar_consulta
 from ana_feegow.services.remarcacao_service import remarcar_consulta
+from ana_feegow.webhooks.feegow_sync_service import _find_id
 
 
 class FakeClient:
@@ -65,3 +66,9 @@ def test_cancelamento_atualiza_status_sem_rede():
 def test_erro_mantem_alias_body():
     error = FeegowAPIError(422, "erro de validação")
     assert error.body == "erro de validação"
+
+
+def test_extrai_id_de_agendamento_e_conteudo_escalar():
+    assert _find_id({"content": {"agendamento_id": 321}}) == 321
+    assert _find_id(321) == 321
+    assert _find_id("321") == 321
