@@ -76,9 +76,29 @@ class PagBankClient:
             "number": digits[2:],
         }
 
+    @staticmethod
+    def _cpf_valido(cpf: str) -> bool:
+        # Valida os dígitos verificadores reais do CPF (algoritmo padrão).
+        # O PagBank rejeita CPFs "de brincadeira" (ex.: 11233223423) mesmo
+        # que tenham 11 dígitos - por isso checamos isso antes de chamar a
+        # API deles, em vez de deixar o erro estourar como HTTP 400 lá.
+        digits = "".join(filter(str.isdigit, cpf or ""))
+        if len(digits) != 11 or digits == digits[0] * 11:
+            return False
+        for pos in (9, 10):
+            soma = sum(
+                int(digits[num]) * ((pos + 1) - num) for num in range(0, pos)
+            )
+            digito = ((soma * 10) % 11) % 10
+            if digito != int(digits[pos]):
+                return False
+        return True
+
     def create_checkout(self, booking) -> PagBankCheckout:
         if len(booking.uid) > 64:
             raise ValueError("UID do Cal.com excede 64 caracteres.")
+        if not self._cpf_valido(booking.cpf):
+            raise ValueError("CPF inválido para o checkout PagBank.")
 
         valor_sinal_centavos = _valor_sinal_centavos(booking.tipo_consulta)
 

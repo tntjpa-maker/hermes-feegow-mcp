@@ -254,3 +254,45 @@ def test_webhook_pagbank_assinatura_errada_ainda_rejeita(tmp_path):
         },
     )
     assert response.status_code == 401
+
+
+def test_create_checkout_rejeita_cpf_com_digito_verificador_invalido(tmp_path):
+    # CPFs "de brincadeira" (ex.: 11233223423, usado numa reserva de teste
+    # real) têm 11 dígitos mas não passam no cálculo do dígito verificador.
+    # O PagBank rejeita esses com HTTP 400 - detectamos isso antes, sem
+    # nem chamar a API deles.
+    session = FakeSession()
+    pagbank = PagBankClient(
+        token="token",
+        webhook_url="https://integracao.example/webhooks/pagbank",
+        public_base_url="https://integracao.example",
+        session=session,
+    )
+    envelope = cal_payload()
+    envelope["payload"]["responses"]["cpf"]["value"] = "11233223423"
+    booking_cpf_invalido = parse_booking(envelope)
+
+    with pytest.raises(ValueError, match="CPF inválido"):
+        pagbank.create_checkout(booking_cpf_invalido)
+
+    assert session.payload is None  # não deve nem tentar chamar a API do PagBank
+
+
+def test_create_checkout_aceita_cpf_de_teste_oficial_do_pagbank(tmp_path):
+    # 01234567890 é o CPF de teste recomendado pela documentação do
+    # PagBank para o ambiente Sandbox - precisa continuar passando.
+    session = FakeSession()
+    pagbank = PagBankClient(
+        token="token",
+        webhook_url="https://integracao.example/webhooks/pagbank",
+        public_base_url="https://integracao.example",
+        session=session,
+    )
+    envelope = cal_payload()
+    envelope["payload"]["responses"]["cpf"]["value"] = "01234567890"
+    booking = parse_booking(envelope)
+
+    checkout = pagbank.create_checkout(booking)
+
+    assert checkout.checkout_id == "CHEC_123"
+    assert session.payload["customer"]["tax_id"] == "01234567890"
