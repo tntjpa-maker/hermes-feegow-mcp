@@ -91,6 +91,9 @@ def create_app(
         except (ValueError, LookupError) as exc:
             logger.warning("Webhook Cal.com rejeitado (422): %s", exc)
             raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            logger.error("Webhook Cal.com falhou (502): %s", exc)
+            raise HTTPException(502, "Falha ao processar pagamento, tente novamente") from exc
 
     @api.post("/webhooks/pagbank")
     async def pagbank_webhook(

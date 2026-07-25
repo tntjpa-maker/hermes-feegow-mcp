@@ -1,3 +1,4 @@
+import logging
 import os
 from dataclasses import dataclass
 from urllib.parse import urlencode
@@ -5,6 +6,8 @@ from urllib.parse import urlencode
 import requests
 
 from ana_feegow.settings.services import SERVICES
+
+logger = logging.getLogger("webhooks")
 
 
 @dataclass(frozen=True)
@@ -112,8 +115,16 @@ class PagBankClient:
             timeout=self.timeout,
         )
         if response.status_code >= 400:
+            # Guarda o motivo real da recusa só no nosso log privado do
+            # servidor (truncado, nunca devolvido ao Cal.com/paciente).
+            corpo = (getattr(response, "text", "") or "")[:500]
+            logger.error(
+                "PagBank recusou o checkout: HTTP %s - %s",
+                response.status_code,
+                corpo,
+            )
             raise RuntimeError(
-                f"Falha ao criar checkout PagBank: HTTP {response.status_code}"
+                f"Falha ao criar checkout PagBank: HTTP {response.status_code} - {corpo}"
             )
 
         data = response.json()
