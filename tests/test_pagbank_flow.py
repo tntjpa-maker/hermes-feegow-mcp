@@ -160,6 +160,35 @@ def test_webhook_pagbank_valida_assinatura_e_redireciona(tmp_path):
     assert redirect.headers["location"] == "https://sandbox.pagbank.test/pay"
 
 
+def test_pagamento_iniciar_com_reschedule_uid_nao_espera_reserva_pendente(tmp_path):
+    # Reproduz o bug real: o Cal.com manda o navegador pra /pagamento/iniciar
+    # após QUALQUER ação de agendamento bem-sucedida, inclusive remarcação -
+    # mas numa remarcação nunca existe (nem vai existir) uma linha em
+    # pending_bookings para o novo uid, porque o SyncHandler já trata o
+    # BOOKING_RESCHEDULED direto, sem exigir novo pagamento. Sem o atalho
+    # baseado no parâmetro rescheduleUid, isso sempre esgotava as tentativas
+    # de polling e devolvia 404 pro paciente que só remarcou uma consulta já
+    # paga.
+    store = SyncStore(str(tmp_path / "sync.db"))
+    client = TestClient(
+        create_app(
+            handler=object(),
+            secret="cal-secret",
+            pagbank_handler=object(),
+            pagbank_token="pagbank-token",
+            store=store,
+        )
+    )
+
+    response = client.get(
+        "/pagamento/iniciar?uid=novo-uid-remarcado&rescheduleUid=uid-antigo-pago",
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "remarcada" in response.text.lower()
+    assert store.get_pending_booking("novo-uid-remarcado") is None
+
+
 def test_pagbank_reconfirma_via_api_quando_assinatura_ausente(tmp_path):
     # Simula o bug conhecido do PagBank Sandbox: a notificação chega sem o
     # header x-authenticity-token. O handler não deve confiar no corpo

@@ -98,6 +98,21 @@ def _default_store():
     return SyncStore(_db_path())
 
 
+def _html_remarcacao_confirmada():
+    return """
+    <!doctype html>
+    <html lang="pt-BR">
+      <head><meta charset="utf-8"><title>Consulta remarcada</title></head>
+      <body style="font-family: sans-serif; max-width: 640px; margin: 64px auto; padding: 24px;">
+        <h1>Consulta remarcada com sucesso</h1>
+        <p>Seu novo horário já está confirmado na Clínica Magnólia.</p>
+        <p>Não é necessário nenhum novo pagamento - o sinal de reserva já pago continua válido.</p>
+        <p>Você receberá a confirmação atualizada pelos canais informados no agendamento.</p>
+      </body>
+    </html>
+    """
+
+
 def _default_calcom_client():
     # Reaproveita o CalComClient da expiracao automatica pra cancelar no
     # Cal.com reservas que o nosso backend recusou por dados invalidos (CPF,
@@ -288,7 +303,22 @@ def create_app(
             raise HTTPException(502, "Falha ao confirmar pagamento, tente novamente") from exc
 
     @api.get("/pagamento/iniciar")
-    def iniciar_pagamento(uid: str = Query(min_length=1)):
+    def iniciar_pagamento(
+        uid: str = Query(min_length=1),
+        rescheduleUid: str | None = Query(None),
+    ):
+        # Cal.com manda o usuário para esta URL após QUALQUER ação de
+        # agendamento bem-sucedida (criação OU remarcação), pois a página de
+        # sucesso configurada no tipo de evento é a mesma para os dois casos.
+        # Numa remarcação não existe (e nunca vai existir) uma linha em
+        # pending_bookings para o novo uid, porque o SyncHandler já trata o
+        # BOOKING_RESCHEDULED direto: reaproveita o agendamento no Feegow e
+        # atualiza o booking_map, sem exigir um novo sinal via PagBank. Sem
+        # este atalho, o polling abaixo sempre esgotava as tentativas e
+        # devolvia 404 para quem só estava remarcando uma consulta já paga.
+        if rescheduleUid:
+            return HTMLResponse(_html_remarcacao_confirmada())
+
         selected_store = store or _default_store()
 
         pending = None
