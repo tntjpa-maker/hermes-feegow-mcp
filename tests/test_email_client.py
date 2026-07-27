@@ -266,3 +266,124 @@ def test_calcom_base_url_com_barra_final_nao_gera_barra_dupla(monkeypatch):
 
     corpo = _corpo(FakeSMTP.instances[0].sent[2])
     assert "//booking" not in corpo
+
+
+# --- enviar_confirmacao_cancelamento -----------------------------------
+
+
+def test_cancelamento_sem_smtp_configurado_nao_envia_e_nao_quebra(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    client = cliente(host="", user="", password="")
+
+    enviado = client.enviar_confirmacao_cancelamento(booking())
+
+    assert enviado is False
+    assert FakeSMTP.instances == []
+
+
+def test_cancelamento_reserva_sem_email_nao_envia(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    client = cliente()
+
+    enviado = client.enviar_confirmacao_cancelamento(booking(email=""))
+
+    assert enviado is False
+    assert FakeSMTP.instances == []
+
+
+def test_cancelamento_envia_com_assunto_e_data_horario_corretos(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    client = cliente()
+
+    enviado = client.enviar_confirmacao_cancelamento(booking())
+
+    assert enviado is True
+    smtp = FakeSMTP.instances[0]
+    from_addr, to_addrs, msg = smtp.sent
+    assert to_addrs == ["paciente@example.com"]
+    assunto = str(
+        email.header.make_header(email.header.decode_header(email.message_from_string(msg)["Subject"]))
+    )
+    assert "Consulta cancelada - Clínica Magnólia" in assunto
+    corpo = _corpo(msg)
+    assert "12/08/2026" in corpo
+    assert "16:30" in corpo
+    assert "cancelada" in corpo.lower()
+    corpo_html = _corpo_html(msg)
+    assert "12/08/2026" in corpo_html
+
+
+def test_cancelamento_falha_no_envio_e_capturada_e_nao_lanca(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTPFalhaAoEnviar)
+    client = cliente()
+
+    enviado = client.enviar_confirmacao_cancelamento(booking())
+
+    assert enviado is False
+
+
+# --- enviar_confirmacao_remarcacao --------------------------------------
+
+
+def test_remarcacao_sem_smtp_configurado_nao_envia_e_nao_quebra(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    client = cliente(host="", user="", password="")
+
+    enviado = client.enviar_confirmacao_remarcacao(booking())
+
+    assert enviado is False
+    assert FakeSMTP.instances == []
+
+
+def test_remarcacao_reserva_sem_email_nao_envia(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    client = cliente()
+
+    enviado = client.enviar_confirmacao_remarcacao(booking(email=""))
+
+    assert enviado is False
+    assert FakeSMTP.instances == []
+
+
+def test_remarcacao_envia_com_assunto_novo_horario_e_aviso_de_pagamento(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    client = cliente()
+
+    enviado = client.enviar_confirmacao_remarcacao(booking(tipo_consulta="consulta_presencial"))
+
+    assert enviado is True
+    smtp = FakeSMTP.instances[0]
+    from_addr, to_addrs, msg = smtp.sent
+    assert to_addrs == ["paciente@example.com"]
+    assunto = str(
+        email.header.make_header(email.header.decode_header(email.message_from_string(msg)["Subject"]))
+    )
+    assert "Consulta remarcada - Clínica Magnólia" in assunto
+    corpo = _corpo(msg)
+    assert "12/08/2026" in corpo
+    assert "16:30" in corpo
+    assert "Rua Exemplo, 123 - Niterói/RJ" in corpo
+    assert "Não é necessário nenhum novo pagamento" in corpo
+
+
+def test_remarcacao_com_calcom_base_url_inclui_links(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    client = cliente(calcom_base_url="https://cal.magnoliasdm.com.br")
+
+    client.enviar_confirmacao_remarcacao(booking(email="paciente@example.com"))
+
+    corpo = _corpo(FakeSMTP.instances[0].sent[2])
+    assert "Cancelar: https://cal.magnoliasdm.com.br/booking/uid-1" in corpo
+    assert (
+        "Remarcar: https://cal.magnoliasdm.com.br/reschedule/uid-1"
+        "?rescheduledBy=paciente%40example.com" in corpo
+    )
+
+
+def test_remarcacao_falha_no_envio_e_capturada_e_nao_lanca(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTPFalhaAoEnviar)
+    client = cliente()
+
+    enviado = client.enviar_confirmacao_remarcacao(booking())
+
+    assert enviado is False

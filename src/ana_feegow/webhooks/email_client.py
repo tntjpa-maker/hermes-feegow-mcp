@@ -215,10 +215,44 @@ class EmailClient:
         ]
         return "<html><body>" + "\n".join(linhas) + "</body></html>"
 
+    def _enviar_email(
+        self, uid: str, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str, contexto: str
+    ) -> bool:
+        # Mecânica de envio compartilhada pelos três tipos de e-mail
+        # (confirmação de pagamento, cancelamento, remarcação). Nunca deve
+        # derrubar o processamento do webhook que a chamou: a ação real
+        # (pagamento confirmado, cancelamento ou remarcação no Feegow) já
+        # aconteceu antes desse método ser chamado. Falha de e-mail só é
+        # logada.
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = assunto
+        msg["From"] = formataddr((self.from_name, self.from_email))
+        msg["To"] = destinatario
+        # Texto puro primeiro (fallback), HTML por último (é o que a maioria
+        # dos clientes de e-mail prioriza mostrar) - ordem exigida pelo
+        # próprio formato multipart/alternative.
+        msg.attach(MIMEText(corpo_texto, "plain", "utf-8"))
+        msg.attach(MIMEText(corpo_html, "html", "utf-8"))
+
+        try:
+            with smtplib.SMTP(self.host, self.port, timeout=self.timeout) as smtp:
+                smtp.starttls()
+                smtp.login(self.user, self.password)
+                smtp.sendmail(self.from_email, [destinatario], msg.as_string())
+            logger.info(
+                "E-mail de %s enviado (uid=%s, destinatario=%s).",
+                contexto,
+                uid,
+                destinatario,
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001 - não pode mascarar/derrubar o webhook
+            logger.error(
+                "Falha ao enviar e-mail de %s (uid=%s): %s", contexto, uid, exc
+            )
+            return False
+
     def enviar_confirmacao_pagamento(self, booking, payload: dict) -> bool:
-        # Nunca deve derrubar o processamento do pagamento: o agendamento
-        # no Feegow já foi criado antes desse método ser chamado, o que
-        # importa de verdade já aconteceu. Falha de e-mail só é logada.
         if not self.configurado:
             logger.warning(
                 "E-mail de confirmação não enviado (uid=%s): SMTP não configurado "
@@ -240,31 +274,167 @@ class EmailClient:
                 booking.uid,
             )
 
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Agendamento confirmado - Clínica Magnólia"
-        msg["From"] = formataddr((self.from_name, self.from_email))
-        msg["To"] = booking.email
-        # Texto puro primeiro (fallback), HTML por último (é o que a maioria
-        # dos clientes de e-mail prioriza mostrar) - ordem exigida pelo
-        # próprio formato multipart/alternative.
-        msg.attach(MIMEText(self._montar_corpo(booking, payload), "plain", "utf-8"))
-        msg.attach(MIMEText(self._montar_corpo_html(booking, payload), "html", "utf-8"))
+        return self._enviar_email(
+            booking.uid,
+            booking.email,
+            "Agendamento confirmado - Clínica Magnólia",
+            self._montar_corpo(booking, payload),
+            self._montar_corpo_html(booking, payload),
+            contexto="confirmação de pagamento",
+        )
 
-        try:
-            with smtplib.SMTP(self.host, self.port, timeout=self.timeout) as smtp:
-                smtp.starttls()
-                smtp.login(self.user, self.password)
-                smtp.sendmail(self.from_email, [booking.email], msg.as_string())
-            logger.info(
-                "E-mail de confirmação de pagamento enviado (uid=%s, destinatario=%s).",
+    def enviar_confirmacao_cancelamento(self, booking) -> bool:
+        # Disparado pelo SyncHandler depois que o cancelamento já foi
+        # confirmado no Cal.com E no Feegow - só avisa a paciente, não faz
+        # parte do fluxo crítico.
+        if not self.configurado:
+            logger.warning(
+                "E-mail de cancelamento não enviado (uid=%s): SMTP não configurado "
+                "(SMTP_HOST/SMTP_USER/SMTP_PASSWORD ausentes).",
                 booking.uid,
-                booking.email,
-            )
-            return True
-        except Exception as exc:  # noqa: BLE001 - não pode mascarar/derrubar o pagamento
-            logger.error(
-                "Falha ao enviar e-mail de confirmação de pagamento (uid=%s): %s",
-                booking.uid,
-                exc,
             )
             return False
+        if not booking.email:
+            logger.warning(
+                "E-mail de cancelamento não enviado (uid=%s): reserva sem e-mail.",
+                booking.uid,
+            )
+            return False
+
+        corpo_texto = "\n".join(
+            [
+                f"Olá {booking.nome},",
+                "",
+                "Sua consulta na Clínica Magnólia foi cancelada.",
+                "",
+                f"Data: {_formatar_data(booking.data)}",
+                f"Horário: {_formatar_horario(booking.horario)}",
+                "",
+                "Se quiser marcar um novo horário, é só acessar novamente o "
+                "link de agendamento ou entrar em contato com a clínica.",
+                "",
+                "Atenciosamente,",
+                "Clínica Magnólia - Dra. Thalita Menezes",
+            ]
+        )
+        corpo_html = (
+            "<html><body>"
+            f"<p>Olá {booking.nome},</p>"
+            "<p>Sua consulta na Clínica Magnólia foi cancelada.</p>"
+            '<table cellpadding="4" cellspacing="0">'
+            f"<tr><td><strong>Data:</strong></td><td>{_formatar_data(booking.data)}</td></tr>"
+            f"<tr><td><strong>Horário:</strong></td><td>{_formatar_horario(booking.horario)}</td></tr>"
+            "</table>"
+            "<p>Se quiser marcar um novo horário, é só acessar novamente o "
+            "link de agendamento ou entrar em contato com a clínica.</p>"
+            "<p>Atenciosamente,<br>Clínica Magnólia - Dra. Thalita Menezes</p>"
+            "</body></html>"
+        )
+        return self._enviar_email(
+            booking.uid,
+            booking.email,
+            "Consulta cancelada - Clínica Magnólia",
+            corpo_texto,
+            corpo_html,
+            contexto="cancelamento",
+        )
+
+    def enviar_confirmacao_remarcacao(self, booking) -> bool:
+        # `booking` já reflete os dados NOVOS (parseados do webhook
+        # BOOKING_RESCHEDULED mais recente pelo SyncHandler), então a
+        # data/horário mostrados aqui já são os atualizados. Disparado só
+        # depois que a remarcação já foi confirmada no Cal.com E no Feegow.
+        if not self.configurado:
+            logger.warning(
+                "E-mail de remarcação não enviado (uid=%s): SMTP não configurado "
+                "(SMTP_HOST/SMTP_USER/SMTP_PASSWORD ausentes).",
+                booking.uid,
+            )
+            return False
+        if not booking.email:
+            logger.warning(
+                "E-mail de remarcação não enviado (uid=%s): reserva sem e-mail.",
+                booking.uid,
+            )
+            return False
+
+        linhas_texto = [
+            f"Olá {booking.nome},",
+            "",
+            "Sua consulta na Clínica Magnólia foi remarcada com sucesso!",
+            "",
+            f"Novo horário - Data: {_formatar_data(booking.data)}",
+            f"Novo horário - Horário: {_formatar_horario(booking.horario)}",
+            "Tipo de consulta: "
+            + TIPOS_CONSULTA_LABEL.get(booking.tipo_consulta, booking.tipo_consulta),
+        ]
+        if booking.tipo_consulta == "consulta_presencial" and self.endereco_presencial:
+            linhas_texto.append(f"Endereço: {self.endereco_presencial}")
+        linhas_texto += [
+            "",
+            "Não é necessário nenhum novo pagamento - o sinal de reserva já pago continua válido.",
+        ]
+        if self.calcom_base_url:
+            linhas_texto += [
+                "",
+                "Precisa cancelar ou remarcar de novo?",
+                f"Cancelar: {self._link_cancelar(booking)}",
+                f"Remarcar: {self._link_remarcar(booking)}",
+            ]
+        linhas_texto += [
+            "",
+            "Qualquer dúvida, estamos à disposição.",
+            "",
+            "Atenciosamente,",
+            "Clínica Magnólia - Dra. Thalita Menezes",
+        ]
+        corpo_texto = "\n".join(linhas_texto)
+
+        linhas_html = [
+            f"<p>Olá {booking.nome},</p>",
+            "<p>Sua consulta na Clínica Magnólia foi remarcada com sucesso!</p>",
+            '<table cellpadding="4" cellspacing="0">',
+            f"<tr><td><strong>Nova data:</strong></td><td>{_formatar_data(booking.data)}</td></tr>",
+            f"<tr><td><strong>Novo horário:</strong></td><td>{_formatar_horario(booking.horario)}</td></tr>",
+            "<tr><td><strong>Tipo de consulta:</strong></td><td>"
+            + TIPOS_CONSULTA_LABEL.get(booking.tipo_consulta, booking.tipo_consulta)
+            + "</td></tr>",
+        ]
+        if booking.tipo_consulta == "consulta_presencial" and self.endereco_presencial:
+            linhas_html.append(
+                f"<tr><td><strong>Endereço:</strong></td><td>{self.endereco_presencial}</td></tr>"
+            )
+        linhas_html.append("</table>")
+        linhas_html.append(
+            "<p>Não é necessário nenhum novo pagamento - o sinal de reserva já "
+            "pago continua válido.</p>"
+        )
+        if self.calcom_base_url:
+            estilo_botao = (
+                "display:inline-block;padding:10px 20px;margin:8px 8px 0 0;"
+                "border-radius:6px;text-decoration:none;font-weight:bold;"
+            )
+            linhas_html += [
+                '<p style="margin-top:24px;">Precisa cancelar ou remarcar de novo?</p>',
+                "<p>",
+                f'<a href="{self._link_remarcar(booking)}" '
+                f'style="{estilo_botao}background-color:#7a4b8a;color:#ffffff;">Remarcar consulta</a>',
+                f'<a href="{self._link_cancelar(booking)}" '
+                f'style="{estilo_botao}background-color:#f2f2f2;color:#333333;border:1px solid #cccccc;">'
+                "Cancelar consulta</a>",
+                "</p>",
+            ]
+        linhas_html += [
+            "<p>Qualquer dúvida, estamos à disposição.</p>",
+            "<p>Atenciosamente,<br>Clínica Magnólia - Dra. Thalita Menezes</p>",
+        ]
+        corpo_html = "<html><body>" + "\n".join(linhas_html) + "</body></html>"
+
+        return self._enviar_email(
+            booking.uid,
+            booking.email,
+            "Consulta remarcada - Clínica Magnólia",
+            corpo_texto,
+            corpo_html,
+            contexto="remarcação",
+        )

@@ -8,11 +8,19 @@ logger = logging.getLogger("webhooks")
 
 
 class SyncHandler:
-    def __init__(self, store, service, payment_service=None, calcom_client=None):
+    def __init__(
+        self,
+        store,
+        service,
+        payment_service=None,
+        calcom_client=None,
+        email_client=None,
+    ):
         self.store = store
         self.service = service
         self.payment_service = payment_service
         self.calcom_client = calcom_client
+        self.email_client = email_client
 
     @staticmethod
     def event_key(envelope: dict) -> str:
@@ -68,6 +76,45 @@ class SyncHandler:
                 uid,
                 exc,
                 cancel_exc,
+            )
+
+    def _notificar_remarcacao(self, booking):
+        # Avisa a paciente do novo horário. Só roda depois que a remarcação
+        # já foi confirmada no Cal.com e no Feegow (o que importa de
+        # verdade já aconteceu), então falha aqui nunca pode derrubar o
+        # processamento do webhook - só é logada.
+        if self.email_client is None:
+            return
+        try:
+            self.email_client.enviar_confirmacao_remarcacao(booking)
+        except Exception as exc:  # noqa: BLE001 - notificação não pode derrubar o webhook
+            logger.error(
+                "Falha ao enviar e-mail de remarcação (uid=%s): %s", booking.uid, exc
+            )
+
+    def _notificar_cancelamento(self, envelope):
+        # Mesma lógica do cancelamento: reconstrói os dados da paciente a
+        # partir do payload do próprio webhook (o BOOKING_CANCELLED do
+        # Cal.com traz a mesma estrutura de responses/attendees/startTime
+        # que o BOOKING_CREATED) só para montar o e-mail. Se o payload
+        # vier incompleto, avisa no log e segue sem quebrar o cancelamento
+        # em si, que já foi concluído antes dessa chamada.
+        if self.email_client is None:
+            return
+        try:
+            booking = parse_booking(envelope)
+        except ValueError as exc:
+            logger.warning(
+                "Não foi possível montar o e-mail de cancelamento (dados da "
+                "paciente incompletos no webhook): %s",
+                exc,
+            )
+            return
+        try:
+            self.email_client.enviar_confirmacao_cancelamento(booking)
+        except Exception as exc:  # noqa: BLE001 - notificação não pode derrubar o webhook
+            logger.error(
+                "Falha ao enviar e-mail de cancelamento (uid=%s): %s", booking.uid, exc
             )
 
     def handle(self, envelope: dict):
@@ -146,6 +193,7 @@ class SyncHandler:
                     # com o status velho (ex.: "scheduled") para sempre.
                     if mapping["cal_uid"] != booking.uid:
                         self.store.update_status(mapping["cal_uid"], "substituido")
+                    self._notificar_remarcacao(booking)
                 else:
                     pending = self.store.get_pending_booking(previous_uid or booking.uid)
                     if not pending:
@@ -164,6 +212,7 @@ class SyncHandler:
             if mapping:
                 self.service.cancel_booking(mapping["feegow_appointment_id"])
                 self.store.update_status(mapping["cal_uid"], "cancelled")
+                self._notificar_cancelamento(envelope)
             else:
                 pending_uid = uid or related_uid
                 pending = self.store.get_pending_booking(pending_uid)

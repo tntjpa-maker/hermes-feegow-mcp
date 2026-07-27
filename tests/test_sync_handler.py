@@ -54,6 +54,29 @@ class FakeCalComClient:
             raise RuntimeError("Cal.com fora do ar")
 
 
+class FakeEmailClient:
+    """Simula o EmailClient real - grava as chamadas em vez de mandar SMTP
+    de verdade. `quebrado` simula uma falha de envio (ex.: SMTP fora do ar),
+    que nunca pode derrubar o processamento do webhook."""
+
+    def __init__(self, quebrado=False):
+        self.quebrado = quebrado
+        self.cancelamentos = []
+        self.remarcacoes = []
+
+    def enviar_confirmacao_cancelamento(self, booking):
+        self.cancelamentos.append(booking)
+        if self.quebrado:
+            raise RuntimeError("SMTP fora do ar")
+        return True
+
+    def enviar_confirmacao_remarcacao(self, booking):
+        self.remarcacoes.append(booking)
+        if self.quebrado:
+            raise RuntimeError("SMTP fora do ar")
+        return True
+
+
 def payload(trigger, uid="uid-1", reschedule_uid=None):
     dados_payload = {
         "uid": uid,
@@ -190,3 +213,106 @@ def test_booking_created_com_dados_invalidos_falha_ao_cancelar_nao_mascara_erro_
         handler.handle(payload("BOOKING_CREATED"))
 
     assert calcom.cancelamentos  # tentou cancelar, mesmo tendo dado errado
+
+
+def test_cancelamento_com_sucesso_avisa_a_paciente_por_email(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    email_client = FakeEmailClient()
+    handler = SyncHandler(store, FakeService(), email_client=email_client)
+
+    handler.handle(payload("BOOKING_PAID", uid="uid-1"))
+    resultado = handler.handle(payload("BOOKING_CANCELLED", uid="uid-1"))
+
+    assert resultado["status"] == "processed"
+    assert len(email_client.cancelamentos) == 1
+    assert email_client.cancelamentos[0].uid == "uid-1"
+
+
+def test_reschedule_com_sucesso_avisa_a_paciente_por_email(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    email_client = FakeEmailClient()
+    handler = SyncHandler(store, FakeService(), email_client=email_client)
+
+    handler.handle(payload("BOOKING_PAID", uid="uid-1"))
+    resultado = handler.handle(
+        payload("BOOKING_RESCHEDULED", uid="uid-2", reschedule_uid="uid-1")
+    )
+
+    assert resultado["status"] == "processed"
+    assert len(email_client.remarcacoes) == 1
+    # o e-mail precisa refletir os dados NOVOS da reserva remarcada
+    assert email_client.remarcacoes[0].uid == "uid-2"
+
+
+def test_sem_email_client_cancelamento_nao_quebra(tmp_path):
+    # email_client=None é o padrão (comportamento de hoje preservado quando
+    # SMTP não está configurado em produção).
+    store = SyncStore(str(tmp_path / "sync.db"))
+    handler = SyncHandler(store, FakeService())
+
+    handler.handle(payload("BOOKING_PAID", uid="uid-1"))
+    resultado = handler.handle(payload("BOOKING_CANCELLED", uid="uid-1"))
+
+    assert resultado["status"] == "processed"
+
+
+def test_sem_email_client_reschedule_nao_quebra(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    handler = SyncHandler(store, FakeService())
+
+    handler.handle(payload("BOOKING_PAID", uid="uid-1"))
+    resultado = handler.handle(
+        payload("BOOKING_RESCHEDULED", uid="uid-2", reschedule_uid="uid-1")
+    )
+
+    assert resultado["status"] == "processed"
+
+
+def test_falha_no_email_de_cancelamento_nao_quebra_o_webhook(tmp_path):
+    # O cancelamento em si (Cal.com + Feegow) já aconteceu quando o e-mail é
+    # disparado - uma falha de SMTP não pode fazer o webhook responder erro
+    # pra quem já teve o que importa de verdade resolvido.
+    store = SyncStore(str(tmp_path / "sync.db"))
+    email_client = FakeEmailClient(quebrado=True)
+    service = FakeService()
+    handler = SyncHandler(store, service, email_client=email_client)
+
+    handler.handle(payload("BOOKING_PAID", uid="uid-1"))
+    resultado = handler.handle(payload("BOOKING_CANCELLED", uid="uid-1"))
+
+    assert resultado["status"] == "processed"
+    assert service.cancelled == 1
+    assert len(email_client.cancelamentos) == 1  # tentou enviar
+
+
+def test_falha_no_email_de_remarcacao_nao_quebra_o_webhook(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    email_client = FakeEmailClient(quebrado=True)
+    service = FakeService()
+    handler = SyncHandler(store, service, email_client=email_client)
+
+    handler.handle(payload("BOOKING_PAID", uid="uid-1"))
+    resultado = handler.handle(
+        payload("BOOKING_RESCHEDULED", uid="uid-2", reschedule_uid="uid-1")
+    )
+
+    assert resultado["status"] == "processed"
+    assert service.rescheduled == 1
+    assert len(email_client.remarcacoes) == 1  # tentou enviar
+
+
+def test_cancelamento_sem_mapping_nao_envia_email(tmp_path):
+    # Cancelamento de uma reserva ainda pendente de pagamento (nunca chegou
+    # a existir no Feegow) não deve gerar e-mail de "consulta cancelada" -
+    # não havia consulta confirmada pra cancelar.
+    store = SyncStore(str(tmp_path / "sync.db"))
+    email_client = FakeEmailClient()
+    handler = SyncHandler(
+        store, FakeService(), FakePaymentServiceOk(), email_client=email_client
+    )
+
+    handler.handle(payload("BOOKING_CREATED", uid="uid-1"))
+    resultado = handler.handle(payload("BOOKING_CANCELLED", uid="uid-1"))
+
+    assert resultado["status"] == "processed"
+    assert email_client.cancelamentos == []

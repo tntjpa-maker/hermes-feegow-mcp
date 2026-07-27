@@ -138,6 +138,7 @@ def _default_handler():
         FeegowSyncService(),
         PagBankClient(),
         _default_calcom_client(),
+        _default_email_client(),
     )
 
 
