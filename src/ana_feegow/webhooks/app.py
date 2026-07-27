@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import hashlib
 import hmac
 import json
@@ -8,6 +10,10 @@ import time
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from ana_feegow.webhooks.calcom_client import CalComClient
+from ana_feegow.webhooks.expiracao import expirar_reservas_pendentes
+from ana_feegow.config import settings
+from ana_feegow.webhooks.email_client import EmailClient
 from ana_feegow.webhooks.feegow_sync_service import FeegowSyncService
 from ana_feegow.webhooks.pagbank_client import PagBankClient
 from ana_feegow.webhooks.pagbank_handler import PagBankHandler
@@ -18,6 +24,60 @@ logger = logging.getLogger("webhooks")
 
 ESPERA_TENTATIVAS = 6
 ESPERA_INTERVALO_SEGUNDOS = 0.5
+
+RESERVA_EXPIRA_MINUTOS_PADRAO = 30
+RESERVA_EXPIRA_INTERVALO_SEGUNDOS_PADRAO = 60
+
+
+def _expira_minutos():
+    return int(os.getenv("RESERVA_EXPIRA_MINUTOS", str(RESERVA_EXPIRA_MINUTOS_PADRAO)))
+
+
+def _expira_intervalo_segundos():
+    return int(
+        os.getenv(
+            "RESERVA_EXPIRA_INTERVALO_SEGUNDOS",
+            str(RESERVA_EXPIRA_INTERVALO_SEGUNDOS_PADRAO),
+        )
+    )
+
+
+async def _loop_expiracao_reservas(selected_store):
+    # Libera automaticamente o horário no Cal.com quando o paciente não paga
+    # o sinal dentro do prazo. Fica completamente desativado (só um aviso no
+    # log) se CALCOM_BASE_URL não estiver configurada, para não quebrar
+    # ambientes/testes que não precisam dessa funcionalidade.
+    calcom_base_url = os.getenv("CALCOM_BASE_URL", "")
+    if not calcom_base_url:
+        logger.warning(
+            "CALCOM_BASE_URL não configurada - expiração automática de reservas "
+            "DESATIVADA. Configure para liberar automaticamente horários não pagos."
+        )
+        return
+
+    try:
+        calcom_client = CalComClient(base_url=calcom_base_url)
+    except RuntimeError as exc:
+        logger.error("Não foi possível iniciar o cliente Cal.com para expiração: %s", exc)
+        return
+
+    minutos = _expira_minutos()
+    intervalo = _expira_intervalo_segundos()
+    logger.info(
+        "Expiração automática de reservas ativada: %s min de prazo, checagem a cada %ss.",
+        minutos,
+        intervalo,
+    )
+    while True:
+        try:
+            processadas = await asyncio.to_thread(
+                expirar_reservas_pendentes, selected_store, calcom_client, minutos
+            )
+            if processadas:
+                logger.info("Varredura de expiração processou: %s", processadas)
+        except Exception as exc:  # noqa: BLE001 - o loop de fundo não pode morrer
+            logger.error("Falha inesperada na varredura de expiração: %s", exc)
+        await asyncio.sleep(intervalo)
 
 
 def _db_path():
@@ -31,11 +91,62 @@ def _default_store():
     return SyncStore(_db_path())
 
 
+def _default_calcom_client():
+    # Reaproveita o CalComClient da expiracao automatica pra cancelar no
+    # Cal.com reservas que o nosso backend recusou por dados invalidos (CPF,
+    # celular, data de nascimento etc.) - sem isso, o horario fica preso na
+    # agenda sem aparecer em lugar nenhum pra clinica perceber.
+    calcom_base_url = os.getenv("CALCOM_BASE_URL", "")
+    if not calcom_base_url:
+        return None
+    try:
+        return CalComClient(base_url=calcom_base_url)
+    except RuntimeError as exc:
+        logger.error(
+            "Nao foi possivel iniciar o cliente Cal.com para cancelamento "
+            "automatico de reservas com dados invalidos: %s",
+            exc,
+        )
+        return None
+
+
 def _default_handler():
     return SyncHandler(
         _default_store(),
         FeegowSyncService(),
         PagBankClient(),
+        _default_calcom_client(),
+    )
+
+
+def _default_email_client():
+    # E-mail de confirmação pós-pagamento, disparado pelo nosso backend (não
+    # pelo Cal.com). Reaproveita o mesmo servidor/remetente SMTP que o
+    # Cal.com já usa, mas com credenciais próprias no nosso .env - as duas
+    # aplicações continuam independentes.
+    #
+    # Lido via settings (pydantic-settings, env_file=".env") e nao via
+    # os.getenv(): em producao (EasyPanel) o processo real nao enxerga essas
+    # variaveis como env vars do container (so existem no arquivo .env), e
+    # os.getenv() sempre retorna vazio nesse caso. O FEEGOW_ACCESS_TOKEN ja
+    # usava esse mesmo mecanismo com sucesso comprovado.
+    host = settings.SMTP_HOST
+    user = settings.SMTP_USER
+    password = settings.SMTP_PASSWORD
+    if not (host and user and password):
+        logger.warning(
+            "E-mail de confirmação de pagamento desativado: SMTP_HOST/"
+            "SMTP_USER/SMTP_PASSWORD não configurados."
+        )
+        return None
+    return EmailClient(
+        host=host,
+        port=settings.SMTP_PORT,
+        user=user,
+        password=password,
+        from_email=settings.SMTP_FROM_EMAIL or user,
+        from_name=settings.SMTP_FROM_NAME,
+        endereco_presencial=settings.ENDERECO_CONSULTA_PRESENCIAL,
     )
 
 
@@ -44,6 +155,7 @@ def _default_pagbank_handler():
         _default_store(),
         FeegowSyncService(),
         PagBankClient(),
+        _default_email_client(),
     )
 
 
@@ -54,7 +166,18 @@ def create_app(
     pagbank_token=None,
     store=None,
 ):
-    api = FastAPI(title="Cal.com → PagBank → Feegow")
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        selected_store = store or _default_store()
+        tarefa = asyncio.create_task(_loop_expiracao_reservas(selected_store))
+        try:
+            yield
+        finally:
+            tarefa.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await tarefa
+
+    api = FastAPI(title="Cal.com → PagBank → Feegow", lifespan=lifespan)
 
     @api.get("/health")
     def health():

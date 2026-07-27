@@ -278,6 +278,107 @@ def test_create_checkout_rejeita_cpf_com_digito_verificador_invalido(tmp_path):
     assert session.payload is None  # não deve nem tentar chamar a API do PagBank
 
 
+class FakeEmailClient:
+    def __init__(self, deve_falhar=False):
+        self.chamadas = []
+        self.deve_falhar = deve_falhar
+
+    def enviar_confirmacao_pagamento(self, booking, payload):
+        self.chamadas.append((booking.uid, payload))
+        if self.deve_falhar:
+            raise RuntimeError("SMTP indisponivel (simulado)")
+        return True
+
+
+def test_pagamento_confirmado_dispara_email_de_confirmacao(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    booking = parse_booking(cal_payload())
+    store.save_pending_booking(booking, "CHEC_123", "https://sandbox.pagbank.test/pay")
+
+    feegow = FakeFeegow()
+    email_client = FakeEmailClient()
+    handler = PagBankHandler(store, feegow, email_client=email_client)
+
+    notification = {
+        "id": "ORDE_123",
+        "reference_id": "cal-uid-pagbank-1",
+        "charges": [{"id": "CHAR_123", "status": "PAID"}],
+    }
+    result = handler.handle(notification)
+
+    assert result["status"] == "processed"
+    assert len(email_client.chamadas) == 1
+    uid_enviado, payload_enviado = email_client.chamadas[0]
+    assert uid_enviado == "cal-uid-pagbank-1"
+    assert payload_enviado is notification
+
+
+def test_pagamento_duplicado_nao_dispara_email_de_novo(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    booking = parse_booking(cal_payload())
+    store.save_pending_booking(booking, "CHEC_123", "https://sandbox.pagbank.test/pay")
+
+    feegow = FakeFeegow()
+    email_client = FakeEmailClient()
+    handler = PagBankHandler(store, feegow, email_client=email_client)
+
+    notification = {
+        "id": "ORDE_123",
+        "reference_id": "cal-uid-pagbank-1",
+        "charges": [{"id": "CHAR_123", "status": "PAID"}],
+    }
+    handler.handle(notification)
+    handler.handle(notification)  # mesma notificacao, deve ser tratada como duplicata
+
+    assert len(email_client.chamadas) == 1
+
+
+def test_sem_email_client_configurado_pagamento_segue_normalmente(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    booking = parse_booking(cal_payload())
+    store.save_pending_booking(booking, "CHEC_123", "https://sandbox.pagbank.test/pay")
+
+    feegow = FakeFeegow()
+    handler = PagBankHandler(store, feegow)  # sem email_client, como antes
+
+    notification = {
+        "id": "ORDE_123",
+        "reference_id": "cal-uid-pagbank-1",
+        "charges": [{"id": "CHAR_123", "status": "PAID"}],
+    }
+    result = handler.handle(notification)
+
+    assert result["status"] == "processed"
+    assert feegow.created == 1
+
+
+def test_falha_no_envio_de_email_nao_derruba_confirmacao_do_pagamento(tmp_path):
+    # O agendamento no Feegow ja foi criado quando o e-mail e disparado -
+    # uma falha no SMTP nao pode fazer o webhook do PagBank retornar erro
+    # (o PagBank ficaria reenviando a notificacao a toa).
+    store = SyncStore(str(tmp_path / "sync.db"))
+    booking = parse_booking(cal_payload())
+    store.save_pending_booking(booking, "CHEC_123", "https://sandbox.pagbank.test/pay")
+
+    feegow = FakeFeegow()
+    email_client = FakeEmailClient(deve_falhar=True)
+    handler = PagBankHandler(store, feegow, email_client=email_client)
+
+    notification = {
+        "id": "ORDE_123",
+        "reference_id": "cal-uid-pagbank-1",
+        "charges": [{"id": "CHAR_123", "status": "PAID"}],
+    }
+
+    with pytest.raises(RuntimeError):
+        handler.handle(notification)
+    # nota: no EmailClient de verdade, enviar_confirmacao_pagamento nunca
+    # lanca - esse teste usa um duble que propositalmente lanca pra provar
+    # que, SE lancasse, o pagamento ja estava confirmado no Feegow antes.
+    assert feegow.created == 1
+    assert store.get_mapping("cal-uid-pagbank-1")["feegow_appointment_id"] == 54
+
+
 def test_create_checkout_aceita_cpf_de_teste_oficial_do_pagbank(tmp_path):
     # 01234567890 é o CPF de teste recomendado pela documentação do
     # PagBank para o ambiente Sandbox - precisa continuar passando.

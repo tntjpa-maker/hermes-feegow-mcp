@@ -7,10 +7,11 @@ RESERVA_INDISPONIVEL_PARA_PAGAMENTO = {"CANCELED", "EXPIRED", "REPLACED"}
 
 
 class PagBankHandler:
-    def __init__(self, store, service, payment_client=None):
+    def __init__(self, store, service, payment_client=None, email_client=None):
         self.store = store
         self.service = service
         self.payment_client = payment_client
+        self.email_client = email_client
 
     @staticmethod
     def event_key(payload: dict) -> str:
@@ -116,6 +117,8 @@ class PagBankHandler:
         )
         self.store.update_pending_status(uid, "PAID")
         self.store.mark_event(key, "PAGBANK_PAID", uid)
+        if self.email_client is not None:
+            self.email_client.enviar_confirmacao_pagamento(booking, payload)
         return {
             "status": "processed",
             "payment_status": status,

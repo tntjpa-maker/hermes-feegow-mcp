@@ -9,6 +9,14 @@ class Settings(BaseSettings):
     FEEGOW_TIMEOUT: int = 20
     FEEGOW_RETRIES: int = 3
 
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "Clínica Magnólia"
+    ENDERECO_CONSULTA_PRESENCIAL: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
