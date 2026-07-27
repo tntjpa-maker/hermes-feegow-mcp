@@ -166,6 +166,32 @@ class SyncStore:
                 (status, uid),
             )
 
+    def claim_pending_status(self, uid: str, de_status: str, para_status: str) -> bool:
+        """Transição atômica de payment_status: só troca de `de_status` para
+        `para_status` se o valor atual no banco ainda for `de_status`.
+
+        Isso existe pra fechar a corrida entre a expiração automática (que
+        cancela reservas não pagas após 30 min) e a confirmação de pagamento
+        do PagBank: as duas rotinas rodam em threads/requisições separadas e,
+        sem essa troca atômica, é possível ler o status como "WAITING" nas
+        duas ao mesmo tempo e as duas seguirem em frente - uma criando a
+        consulta no Feegow, a outra cancelando a reserva no Cal.com por cima,
+        ou vice-versa. Como o UPDATE abaixo é uma única instrução SQL com a
+        condição no WHERE, o SQLite garante que só uma das duas chamadas
+        concorrentes altera a linha; a outra recebe rowcount=0 (perdeu a
+        corrida) e deve desistir da ação em vez de sobrescrever o resultado.
+        """
+        with self._connect() as db:
+            cursor = db.execute(
+                """
+                UPDATE pending_bookings
+                SET payment_status=?, updated_at=CURRENT_TIMESTAMP
+                WHERE cal_uid=? AND payment_status=?
+                """,
+                (para_status, uid, de_status),
+            )
+            return cursor.rowcount > 0
+
     def list_pending_expirados(self, minutos: int):
         # Reservas que continuam "WAITING" (nunca foram pagas nem canceladas)
         # há mais de `minutos` minutos, contando a partir da última mudança

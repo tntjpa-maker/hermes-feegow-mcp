@@ -148,13 +148,17 @@ def test_expira_ignora_reserva_paga_entre_a_varredura_e_o_cancelamento(tmp_path,
     store.save_pending_booking(FakeBooking("uid-1", 1), "CHEC_1", "https://pay/1")
     _envelhecer_pending(store, "uid-1", 31)
 
-    original_get = store.get_pending_booking
+    original_claim = store.claim_pending_status
 
-    def get_pending_booking_simulando_corrida(uid):
+    def claim_simulando_corrida(uid, de_status, para_status):
+        # Simula o pagamento sendo confirmado exatamente entre a varredura
+        # (list_pending_expirados) e a tentativa de reivindicar a reserva -
+        # a troca atômica real (UPDATE ... WHERE payment_status=?) deve
+        # perder a corrida sozinha, sem precisar de nenhum recheck manual.
         store.update_pending_status(uid, "PAID")
-        return original_get(uid)
+        return original_claim(uid, de_status, para_status)
 
-    monkeypatch.setattr(store, "get_pending_booking", get_pending_booking_simulando_corrida)
+    monkeypatch.setattr(store, "claim_pending_status", claim_simulando_corrida)
 
     calcom = FakeCalComClient()
     resultado = expirar_reservas_pendentes(store, calcom, minutos=30)
@@ -162,6 +166,43 @@ def test_expira_ignora_reserva_paga_entre_a_varredura_e_o_cancelamento(tmp_path,
     assert resultado == []
     assert calcom.cancelamentos == []
     assert store.get_pending_booking("uid-1")["payment_status"] == "PAID"
+
+
+def test_claim_pending_status_e_atomico(tmp_path):
+    store = SyncStore(str(tmp_path / "sync.db"))
+    store.save_pending_booking(FakeBooking("uid-1", 1), "CHEC_1", "https://pay/1")
+
+    # A primeira reivindicação parte do estado real (WAITING) e vence.
+    assert store.claim_pending_status("uid-1", "WAITING", "EXPIRING") is True
+    assert store.get_pending_booking("uid-1")["payment_status"] == "EXPIRING"
+
+    # Uma segunda tentativa partindo do mesmo "WAITING" (leitura desatualizada,
+    # como aconteceria com um concorrente que leu o status antes da troca
+    # acima) perde a corrida e não altera nada.
+    assert store.claim_pending_status("uid-1", "WAITING", "PROCESSING") is False
+    assert store.get_pending_booking("uid-1")["payment_status"] == "EXPIRING"
+
+
+def test_expiracao_perde_a_corrida_quando_pagbank_ja_reivindicou_a_reserva(tmp_path):
+    # Cobre a corrida real que causou um agendamento fantasma em produção:
+    # o PagBankHandler reivindica a reserva (WAITING -> PROCESSING) para
+    # criar a consulta no Feegow, e a varredura de expiração, mesmo tendo
+    # listado a mesma reserva como "WAITING" segundos antes, não consegue
+    # mais cancelá-la - a troca atômica garante que só quem chegou primeiro
+    # no banco "ganha".
+    store = SyncStore(str(tmp_path / "sync.db"))
+    store.save_pending_booking(FakeBooking("uid-1", 1), "CHEC_1", "https://pay/1")
+    _envelhecer_pending(store, "uid-1", 31)
+
+    # Simula o PagBankHandler vencendo a corrida um instante antes.
+    assert store.claim_pending_status("uid-1", "WAITING", "PROCESSING") is True
+
+    calcom = FakeCalComClient()
+    resultado = expirar_reservas_pendentes(store, calcom, minutos=30)
+
+    assert resultado == []
+    assert calcom.cancelamentos == []
+    assert store.get_pending_booking("uid-1")["payment_status"] == "PROCESSING"
 
 
 def test_expira_registra_falha_e_continua_sem_marcar_expired(tmp_path):

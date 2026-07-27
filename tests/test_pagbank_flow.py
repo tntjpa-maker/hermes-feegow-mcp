@@ -333,6 +333,95 @@ def test_pagamento_duplicado_nao_dispara_email_de_novo(tmp_path):
     assert len(email_client.chamadas) == 1
 
 
+def test_pagamento_tardio_apos_expiracao_ja_ter_reivindicado_nao_cria_consulta(tmp_path):
+    # Reproduz o bug real encontrado em produção: a reserva expirou (30 min
+    # sem pagamento) e a expiração automática já reivindicou a linha
+    # (WAITING -> EXPIRING) antes de cancelar no Cal.com, mas a notificação
+    # PAID do PagBank chega logo em seguida. Antes da correção, o handler
+    # lia o status uma única vez no início e criava a consulta no Feegow
+    # mesmo assim; agora ele reivindica atomicamente antes de criar, então
+    # perde a corrida e não cria nada.
+    store = SyncStore(str(tmp_path / "sync.db"))
+    booking = parse_booking(cal_payload())
+    store.save_pending_booking(booking, "CHEC_123", "https://sandbox.pagbank.test/pay")
+
+    # Simula a expiração automática tendo acabado de reivindicar a reserva.
+    assert store.claim_pending_status("cal-uid-pagbank-1", "WAITING", "EXPIRING") is True
+
+    feegow = FakeFeegow()
+    handler = PagBankHandler(store, feegow)
+
+    notification = {
+        "id": "ORDE_123",
+        "reference_id": "cal-uid-pagbank-1",
+        "charges": [{"id": "CHAR_123", "status": "PAID"}],
+    }
+    result = handler.handle(notification)
+
+    assert result["status"] == "revisao_manual"
+    assert feegow.created == 0
+    assert store.get_mapping("cal-uid-pagbank-1") is None
+
+
+def test_pagamento_perde_corrida_apos_ler_status_disponivel_nao_cria_consulta(tmp_path, monkeypatch):
+    # Mesmo cenário acima, mas simulando a corrida no ponto mais estreito
+    # possível: o status ainda está "WAITING" quando o handler lê `pending`,
+    # e só muda (por outra rotina) um instante depois, exatamente entre a
+    # leitura e a reivindicação atômica. A reivindicação deve perder e
+    # nenhuma consulta deve ser criada no Feegow.
+    store = SyncStore(str(tmp_path / "sync.db"))
+    booking = parse_booking(cal_payload())
+    store.save_pending_booking(booking, "CHEC_123", "https://sandbox.pagbank.test/pay")
+
+    feegow = FakeFeegow()
+    handler = PagBankHandler(store, feegow)
+
+    original_claim = store.claim_pending_status
+
+    def claim_simulando_corrida(uid, de_status, para_status):
+        store.update_pending_status(uid, "EXPIRED")
+        return original_claim(uid, de_status, para_status)
+
+    monkeypatch.setattr(store, "claim_pending_status", claim_simulando_corrida)
+    notification = {
+        "id": "ORDE_123",
+        "reference_id": "cal-uid-pagbank-1",
+        "charges": [{"id": "CHAR_123", "status": "PAID"}],
+    }
+    result = handler.handle(notification)
+
+    assert result["status"] == "revisao_manual"
+    assert feegow.created == 0
+    assert store.get_mapping("cal-uid-pagbank-1") is None
+
+
+def test_falha_ao_criar_no_feegow_devolve_reserva_para_reivindicacao_futura(tmp_path):
+    # Se claim_pending_status já reivindicou a reserva (WAITING -> PROCESSING)
+    # mas a criação no Feegow falhar (ex.: API fora do ar), a reserva não
+    # pode ficar travada em "PROCESSING" para sempre - um reenvio do webhook
+    # pelo PagBank (comportamento normal dele) precisa conseguir tentar de
+    # novo.
+    store = SyncStore(str(tmp_path / "sync.db"))
+    booking = parse_booking(cal_payload())
+    store.save_pending_booking(booking, "CHEC_123", "https://sandbox.pagbank.test/pay")
+
+    class FeegowQuebrado:
+        def create_booking(self, booking):
+            raise RuntimeError("Feegow fora do ar")
+
+    handler = PagBankHandler(store, FeegowQuebrado())
+    notification = {
+        "id": "ORDE_123",
+        "reference_id": "cal-uid-pagbank-1",
+        "charges": [{"id": "CHAR_123", "status": "PAID"}],
+    }
+
+    with pytest.raises(RuntimeError):
+        handler.handle(notification)
+
+    assert store.get_pending_booking("cal-uid-pagbank-1")["payment_status"] == "WAITING"
+
+
 def test_sem_email_client_configurado_pagamento_segue_normalmente(tmp_path):
     store = SyncStore(str(tmp_path / "sync.db"))
     booking = parse_booking(cal_payload())

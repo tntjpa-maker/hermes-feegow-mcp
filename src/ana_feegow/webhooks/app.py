@@ -16,7 +16,10 @@ from ana_feegow.config import settings
 from ana_feegow.webhooks.email_client import EmailClient
 from ana_feegow.webhooks.feegow_sync_service import FeegowSyncService
 from ana_feegow.webhooks.pagbank_client import PagBankClient
-from ana_feegow.webhooks.pagbank_handler import PagBankHandler
+from ana_feegow.webhooks.pagbank_handler import (
+    RESERVA_INDISPONIVEL_PARA_PAGAMENTO,
+    PagBankHandler,
+)
 from ana_feegow.webhooks.sync_handler import SyncHandler
 from ana_feegow.webhooks.sync_store import SyncStore
 
@@ -302,7 +305,7 @@ def create_app(
                 ESPERA_TENTATIVAS,
             )
             raise HTTPException(404, "Reserva pendente não encontrada")
-        if pending["payment_status"] in {"CANCELED", "EXPIRED", "REPLACED"}:
+        if pending["payment_status"] in RESERVA_INDISPONIVEL_PARA_PAGAMENTO:
             raise HTTPException(409, "Esta reserva não aceita mais pagamento")
         return RedirectResponse(pending["payment_url"], status_code=307)
 

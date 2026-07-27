@@ -3,7 +3,7 @@ import json
 
 from ana_feegow.webhooks.cal_parser import CalBooking
 
-RESERVA_INDISPONIVEL_PARA_PAGAMENTO = {"CANCELED", "EXPIRED", "REPLACED"}
+RESERVA_INDISPONIVEL_PARA_PAGAMENTO = {"CANCELED", "EXPIRED", "REPLACED", "EXPIRING", "PROCESSING"}
 
 
 class PagBankHandler:
@@ -94,20 +94,47 @@ class PagBankHandler:
         if not pending:
             raise LookupError("Pagamento sem reserva Cal.com pendente.")
 
-        if pending["payment_status"] in RESERVA_INDISPONIVEL_PARA_PAGAMENTO:
+        estado_lido = pending["payment_status"]
+        if estado_lido in RESERVA_INDISPONIVEL_PARA_PAGAMENTO:
             self.store.mark_event(key, "PAGBANK_PAID_APOS_CANCELAMENTO", uid)
             return {
                 "status": "revisao_manual",
                 "payment_status": status,
                 "uid": uid,
-                "motivo": (
-                    f"reserva estava '{pending['payment_status']}' "
-                    "quando o pagamento chegou"
-                ),
+                "motivo": f"reserva estava '{estado_lido}' quando o pagamento chegou",
             }
 
-        booking = CalBooking(**pending["booking"])
-        appointment_id = self.service.create_booking(booking)
+        # Reivindica a reserva atomicamente antes de criar a consulta no
+        # Feegow - fecha a corrida com a expiração automática (que roda em
+        # segundo plano e pode cancelar a reserva por não-pagamento bem
+        # entre a leitura acima e este ponto). Se perdermos a corrida, a
+        # reserva já não está mais no estado que acabamos de ler e não
+        # criamos a consulta - evita reviver no Feegow uma reserva que
+        # acabou de ser cancelada/expirada no Cal.com.
+        if not self.store.claim_pending_status(uid, estado_lido, "PROCESSING"):
+            self.store.mark_event(key, "PAGBANK_PAID_APOS_CANCELAMENTO", uid)
+            if self.store.get_mapping(uid):
+                # Corrida benigna: outra entrega concorrente da mesma
+                # notificação já processou o pagamento primeiro.
+                return {"status": "duplicate", "payment_status": status, "uid": uid}
+            return {
+                "status": "revisao_manual",
+                "payment_status": status,
+                "uid": uid,
+                "motivo": "reserva mudou de estado entre a leitura e a confirmação do pagamento",
+            }
+
+        try:
+            booking = CalBooking(**pending["booking"])
+            appointment_id = self.service.create_booking(booking)
+        except Exception:
+            # Devolve a reserva pro estado em que estava - sem isso, ela
+            # fica travada em "PROCESSING" e nenhuma nova tentativa (ex.:
+            # reenvio do webhook pelo PagBank) consegue mais criar a
+            # consulta no Feegow.
+            self.store.update_pending_status(uid, estado_lido)
+            raise
+
         self.store.save_mapping(
             booking.uid,
             booking.booking_id,

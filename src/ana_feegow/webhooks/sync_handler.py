@@ -169,7 +169,19 @@ class SyncHandler:
                 pending = self.store.get_pending_booking(pending_uid)
                 if not pending:
                     raise LookupError("Reserva Cal.com sem vínculo com o Feegow.")
-                self.store.update_pending_status(pending_uid, "CANCELED")
+                # Reivindica atomicamente antes de marcar como cancelada -
+                # se o pagamento estiver sendo confirmado nesse exato
+                # momento (self.store.claim_pending_status em
+                # PagBankHandler), não sobrescrevemos o resultado dele.
+                if not self.store.claim_pending_status(
+                    pending_uid, pending["payment_status"], "CANCELED"
+                ):
+                    logger.warning(
+                        "Cancelamento do Cal.com para %s chegou junto com uma "
+                        "confirmação de pagamento em andamento - não marquei "
+                        "como cancelada. Confira manualmente.",
+                        pending_uid,
+                    )
 
         self.store.mark_event(key, trigger, uid)
         return response
