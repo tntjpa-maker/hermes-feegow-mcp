@@ -165,3 +165,24 @@ class SyncStore:
                 """,
                 (status, uid),
             )
+
+    def list_pending_expirados(self, minutos: int):
+        # Reservas que continuam "WAITING" (nunca foram pagas nem canceladas)
+        # há mais de `minutos` minutos, contando a partir da última mudança
+        # de status (updated_at). SQLite guarda CURRENT_TIMESTAMP em UTC,
+        # então a comparação abaixo também usa UTC - consistente.
+        with self._connect() as db:
+            rows = db.execute(
+                """
+                SELECT * FROM pending_bookings
+                WHERE payment_status = 'WAITING'
+                  AND updated_at <= datetime('now', ?)
+                """,
+                (f"-{int(minutos)} minutes",),
+            ).fetchall()
+        resultados = []
+        for row in rows:
+            item = dict(row)
+            item["booking"] = json.loads(item.pop("booking_json"))
+            resultados.append(item)
+        return resultados
