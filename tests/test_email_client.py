@@ -7,11 +7,23 @@ from ana_feegow.webhooks.cal_parser import CalBooking
 from ana_feegow.webhooks.email_client import EmailClient
 
 
-def _corpo(msg_str: str) -> str:
-    """Decodifica o corpo (o smtplib recebe a mensagem como texto MIME
+def _parte(msg_str: str, content_type: str) -> str:
+    """Decodifica uma parte específica (text/plain ou text/html) da mensagem
+    multipart/alternative (o smtplib recebe a mensagem como texto MIME
     pronto pra transmissão - com corpo em base64 por causa dos acentos)."""
     mensagem = email.message_from_string(msg_str)
-    return mensagem.get_payload(decode=True).decode("utf-8")
+    for parte in mensagem.walk():
+        if parte.get_content_type() == content_type:
+            return parte.get_payload(decode=True).decode("utf-8")
+    raise AssertionError(f"Nenhuma parte {content_type} encontrada na mensagem.")
+
+
+def _corpo(msg_str: str) -> str:
+    return _parte(msg_str, "text/plain")
+
+
+def _corpo_html(msg_str: str) -> str:
+    return _parte(msg_str, "text/html")
 
 
 def booking(tipo_consulta="consulta_presencial", email="paciente@example.com"):
@@ -204,3 +216,53 @@ def test_sem_charges_no_payload_envia_sem_valor(monkeypatch):
     assert enviado is True
     corpo = _corpo(FakeSMTP.instances[0].sent[2])
     assert "Sinal de reserva" not in corpo
+
+
+def test_sem_calcom_base_url_nao_inclui_links_de_cancelar_remarcar(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    client = cliente()  # sem calcom_base_url
+
+    enviado = client.enviar_confirmacao_pagamento(booking(), pagbank_payload())
+
+    assert enviado is True
+    msg = FakeSMTP.instances[0].sent[2]
+    assert "Cancelar" not in _corpo(msg)
+    assert "cal.magnoliasdm.com.br" not in _corpo_html(msg)
+
+
+def test_com_calcom_base_url_inclui_links_corretos_vinculados_ao_uid(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    client = cliente(calcom_base_url="https://cal.magnoliasdm.com.br")
+
+    enviado = client.enviar_confirmacao_pagamento(
+        booking(email="paciente@example.com"), pagbank_payload()
+    )
+
+    assert enviado is True
+    msg = FakeSMTP.instances[0].sent[2]
+
+    corpo_texto = _corpo(msg)
+    assert "Cancelar: https://cal.magnoliasdm.com.br/booking/uid-1" in corpo_texto
+    assert (
+        "Remarcar: https://cal.magnoliasdm.com.br/reschedule/uid-1"
+        "?rescheduledBy=paciente%40example.com" in corpo_texto
+    )
+
+    corpo_html = _corpo_html(msg)
+    assert 'href="https://cal.magnoliasdm.com.br/booking/uid-1"' in corpo_html
+    assert (
+        'href="https://cal.magnoliasdm.com.br/reschedule/uid-1'
+        '?rescheduledBy=paciente%40example.com"' in corpo_html
+    )
+    assert "Remarcar consulta" in corpo_html
+    assert "Cancelar consulta" in corpo_html
+
+
+def test_calcom_base_url_com_barra_final_nao_gera_barra_dupla(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    client = cliente(calcom_base_url="https://cal.magnoliasdm.com.br/")
+
+    client.enviar_confirmacao_pagamento(booking(), pagbank_payload())
+
+    corpo = _corpo(FakeSMTP.instances[0].sent[2])
+    assert "//booking" not in corpo

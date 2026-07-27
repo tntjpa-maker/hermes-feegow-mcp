@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "Clínica Magnólia"
     ENDERECO_CONSULTA_PRESENCIAL: str = ""
 
+    # URL pública do Cal.com self-hosted (ex.: https://cal.magnoliasdm.com.br).
+    # Lida via settings, e não via os.getenv(), pelo mesmo motivo do SMTP_*:
+    # em produção (EasyPanel) o processo real não enxerga variáveis que só
+    # existem no arquivo .env como env vars do container.
+    CALCOM_BASE_URL: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

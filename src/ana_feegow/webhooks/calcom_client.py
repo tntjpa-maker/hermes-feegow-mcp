@@ -1,7 +1,8 @@
 import logging
-import os
 
 import requests
+
+from ana_feegow.config import settings
 
 logger = logging.getLogger("webhooks")
 
@@ -16,7 +17,7 @@ class CalComClient:
     """
 
     def __init__(self, base_url=None, session=None, timeout=30):
-        self.base_url = (base_url or os.getenv("CALCOM_BASE_URL", "")).rstrip("/")
+        self.base_url = (base_url or settings.CALCOM_BASE_URL).rstrip("/")
         self.session = session or requests.Session()
         self.timeout = timeout
         if not self.base_url:

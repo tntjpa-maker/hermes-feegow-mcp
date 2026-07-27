@@ -1,8 +1,10 @@
 import logging
 import smtplib
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
+from urllib.parse import quote
 
 logger = logging.getLogger("webhooks")
 
@@ -61,6 +63,7 @@ class EmailClient:
         from_email=None,
         from_name="Clínica Magnólia",
         endereco_presencial=None,
+        calcom_base_url=None,
         timeout=15,
     ):
         self.host = host
@@ -70,6 +73,11 @@ class EmailClient:
         self.from_email = from_email or user
         self.from_name = from_name
         self.endereco_presencial = (endereco_presencial or "").strip()
+        # Usado para montar os links de cancelar/remarcar do e-mail, apontando
+        # direto para a reserva certa no Cal.com (via uid). Se não configurado,
+        # o e-mail é enviado normalmente, só sem esses links - igual acontecia
+        # antes dessa funcionalidade existir.
+        self.calcom_base_url = (calcom_base_url or "").rstrip("/")
         self.timeout = timeout
 
     @property
@@ -92,6 +100,20 @@ class EmailClient:
         if not charges:
             return None
         return (charges[0].get("amount") or {}).get("value")
+
+    def _link_cancelar(self, booking) -> str:
+        # Página pública do Cal.com com os detalhes da reserva - de lá o
+        # paciente clica em "Cancelar" (fluxo já usado hoje pelo próprio
+        # Cal.com, o mesmo endpoint que o CalComClient usa no cancelamento
+        # automático por dados inválidos).
+        return f"{self.calcom_base_url}/booking/{booking.uid}"
+
+    def _link_remarcar(self, booking) -> str:
+        # Leva direto pro calendário de remarcação daquela reserva específica.
+        link = f"{self.calcom_base_url}/reschedule/{booking.uid}"
+        if booking.email:
+            link += f"?rescheduledBy={quote(booking.email)}"
+        return link
 
     def _montar_corpo(self, booking, payload: dict) -> str:
         linhas = [
@@ -125,6 +147,14 @@ class EmailClient:
                     texto_valor += f" via {forma}"
                 linhas.append(texto_valor)
 
+        if self.calcom_base_url:
+            linhas += [
+                "",
+                "Precisa cancelar ou remarcar?",
+                f"Cancelar: {self._link_cancelar(booking)}",
+                f"Remarcar: {self._link_remarcar(booking)}",
+            ]
+
         linhas += [
             "",
             "Qualquer dúvida, estamos à disposição.",
@@ -133,6 +163,57 @@ class EmailClient:
             "Clínica Magnólia - Dra. Thalita Menezes",
         ]
         return "\n".join(linhas)
+
+    def _montar_corpo_html(self, booking, payload: dict) -> str:
+        linhas = [
+            f"<p>Olá {booking.nome},</p>",
+            "<p>Seu agendamento na Clínica Magnólia foi confirmado com sucesso!</p>",
+            "<table cellpadding=\"4\" cellspacing=\"0\">",
+            f"<tr><td><strong>Data:</strong></td><td>{_formatar_data(booking.data)}</td></tr>",
+            f"<tr><td><strong>Horário:</strong></td><td>{_formatar_horario(booking.horario)}</td></tr>",
+            "<tr><td><strong>Tipo de consulta:</strong></td><td>"
+            + TIPOS_CONSULTA_LABEL.get(booking.tipo_consulta, booking.tipo_consulta)
+            + "</td></tr>",
+        ]
+
+        if booking.tipo_consulta == "consulta_presencial" and self.endereco_presencial:
+            linhas.append(
+                f"<tr><td><strong>Endereço:</strong></td><td>{self.endereco_presencial}</td></tr>"
+            )
+
+        valor_centavos = self._valor_pago_centavos(payload)
+        if valor_centavos is not None:
+            valor_fmt = _formatar_valor(valor_centavos)
+            if valor_fmt:
+                texto_valor = f"Sinal de reserva confirmado: {valor_fmt}"
+                forma = self._forma_pagamento(payload)
+                if forma:
+                    texto_valor += f" via {forma}"
+                linhas.append(f"<tr><td colspan=\"2\">{texto_valor}</td></tr>")
+
+        linhas.append("</table>")
+
+        if self.calcom_base_url:
+            estilo_botao = (
+                "display:inline-block;padding:10px 20px;margin:8px 8px 0 0;"
+                "border-radius:6px;text-decoration:none;font-weight:bold;"
+            )
+            linhas += [
+                '<p style="margin-top:24px;">Precisa cancelar ou remarcar?</p>',
+                "<p>",
+                f'<a href="{self._link_remarcar(booking)}" '
+                f'style="{estilo_botao}background-color:#7a4b8a;color:#ffffff;">Remarcar consulta</a>',
+                f'<a href="{self._link_cancelar(booking)}" '
+                f'style="{estilo_botao}background-color:#f2f2f2;color:#333333;border:1px solid #cccccc;">'
+                "Cancelar consulta</a>",
+                "</p>",
+            ]
+
+        linhas += [
+            "<p>Qualquer dúvida, estamos à disposição.</p>",
+            "<p>Atenciosamente,<br>Clínica Magnólia - Dra. Thalita Menezes</p>",
+        ]
+        return "<html><body>" + "\n".join(linhas) + "</body></html>"
 
     def enviar_confirmacao_pagamento(self, booking, payload: dict) -> bool:
         # Nunca deve derrubar o processamento do pagamento: o agendamento
@@ -152,11 +233,22 @@ class EmailClient:
             )
             return False
 
-        corpo = self._montar_corpo(booking, payload)
-        msg = MIMEText(corpo, "plain", "utf-8")
+        if not self.calcom_base_url:
+            logger.warning(
+                "E-mail de confirmação (uid=%s) enviado sem links de cancelar/"
+                "remarcar: CALCOM_BASE_URL não configurada.",
+                booking.uid,
+            )
+
+        msg = MIMEMultipart("alternative")
         msg["Subject"] = "Agendamento confirmado - Clínica Magnólia"
         msg["From"] = formataddr((self.from_name, self.from_email))
         msg["To"] = booking.email
+        # Texto puro primeiro (fallback), HTML por último (é o que a maioria
+        # dos clientes de e-mail prioriza mostrar) - ordem exigida pelo
+        # próprio formato multipart/alternative.
+        msg.attach(MIMEText(self._montar_corpo(booking, payload), "plain", "utf-8"))
+        msg.attach(MIMEText(self._montar_corpo_html(booking, payload), "html", "utf-8"))
 
         try:
             with smtplib.SMTP(self.host, self.port, timeout=self.timeout) as smtp:

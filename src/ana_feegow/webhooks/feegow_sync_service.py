@@ -86,15 +86,29 @@ class FeegowSyncService:
         return appointment_id
 
     def reschedule_booking(self, appointment_id: int, booking):
-        return remarcar_consulta(
+        result = remarcar_consulta(
             agendamento_id=appointment_id,
             data=booking.data,
             horario=booking.horario,
             client=self.client,
         )
+        # O Feegow pode recusar a remarcação (agenda ocupada, agendamento
+        # já cancelado etc.) respondendo HTTP 200 com "success": false no
+        # corpo - igual acontece na criação. Sem essa checagem, marcaríamos
+        # a reserva como remarcada no nosso banco mesmo sem nada ter mudado
+        # de fato na agenda da clínica.
+        if not result.get("success"):
+            raise RuntimeError(f"Falha ao remarcar agendamento Feegow: {result}")
+        return result
 
     def cancel_booking(self, appointment_id: int):
-        return cancelar_consulta(
+        result = cancelar_consulta(
             agendamento_id=appointment_id,
             client=self.client,
         )
+        # Mesmo raciocínio da remarcação: sem essa checagem, uma recusa do
+        # Feegow (HTTP 200 com "success": false) seria tratada como
+        # cancelamento bem-sucedido no nosso banco.
+        if not result.get("success"):
+            raise RuntimeError(f"Falha ao cancelar agendamento Feegow: {result}")
+        return result

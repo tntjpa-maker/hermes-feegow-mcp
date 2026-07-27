@@ -141,6 +141,11 @@ class SyncHandler:
                         mapping["feegow_appointment_id"],
                         "rescheduled",
                     )
+                    # O Cal.com costuma gerar um uid novo a cada remarcação.
+                    # Sem marcar o registro antigo, ele fica órfão no banco
+                    # com o status velho (ex.: "scheduled") para sempre.
+                    if mapping["cal_uid"] != booking.uid:
+                        self.store.update_status(mapping["cal_uid"], "substituido")
                 else:
                     pending = self.store.get_pending_booking(previous_uid or booking.uid)
                     if not pending:

@@ -47,7 +47,11 @@ async def _loop_expiracao_reservas(selected_store):
     # o sinal dentro do prazo. Fica completamente desativado (só um aviso no
     # log) se CALCOM_BASE_URL não estiver configurada, para não quebrar
     # ambientes/testes que não precisam dessa funcionalidade.
-    calcom_base_url = os.getenv("CALCOM_BASE_URL", "")
+    #
+    # Lido via settings (pydantic-settings) e não via os.getenv() - mesmo
+    # motivo do SMTP_*: em produção o processo real não enxerga variáveis
+    # que só existem no arquivo .env como env vars do container.
+    calcom_base_url = settings.CALCOM_BASE_URL
     if not calcom_base_url:
         logger.warning(
             "CALCOM_BASE_URL não configurada - expiração automática de reservas "
@@ -96,7 +100,7 @@ def _default_calcom_client():
     # Cal.com reservas que o nosso backend recusou por dados invalidos (CPF,
     # celular, data de nascimento etc.) - sem isso, o horario fica preso na
     # agenda sem aparecer em lugar nenhum pra clinica perceber.
-    calcom_base_url = os.getenv("CALCOM_BASE_URL", "")
+    calcom_base_url = settings.CALCOM_BASE_URL
     if not calcom_base_url:
         return None
     try:
@@ -147,6 +151,7 @@ def _default_email_client():
         from_email=settings.SMTP_FROM_EMAIL or user,
         from_name=settings.SMTP_FROM_NAME,
         endereco_presencial=settings.ENDERECO_CONSULTA_PRESENCIAL,
+        calcom_base_url=settings.CALCOM_BASE_URL,
     )
 
 

@@ -54,24 +54,27 @@ class FakeCalComClient:
             raise RuntimeError("Cal.com fora do ar")
 
 
-def payload(trigger):
+def payload(trigger, uid="uid-1", reschedule_uid=None):
+    dados_payload = {
+        "uid": uid,
+        "bookingId": 10,
+        "eventTypeId": 7,
+        "type": "niteroi",
+        "startTime": "2026-07-29T19:30:00Z",
+        "responses": {
+            "name": {"value": "Paciente Teste"},
+            "email": {"value": "paciente@example.com"},
+            "cpf": {"value": "11767993714"},
+            "data_nascimento": {"value": "27051988"},
+            "celular": {"value": "21985929056"},
+        },
+    }
+    if reschedule_uid:
+        dados_payload["rescheduleUid"] = reschedule_uid
     return {
         "triggerEvent": trigger,
         "createdAt": f"2026-07-24T09:55:2{len(trigger)}Z",
-        "payload": {
-            "uid": "uid-1",
-            "bookingId": 10,
-            "eventTypeId": 7,
-            "type": "niteroi",
-            "startTime": "2026-07-29T19:30:00Z",
-            "responses": {
-                "name": {"value": "Paciente Teste"},
-                "email": {"value": "paciente@example.com"},
-                "cpf": {"value": "11767993714"},
-                "data_nascimento": {"value": "27051988"},
-                "celular": {"value": "21985929056"},
-            },
-        },
+        "payload": dados_payload,
     }
 
 
@@ -86,6 +89,51 @@ def test_fluxo_pago_remarcado_cancelado_e_idempotente(tmp_path):
     assert handler.handle(payload("BOOKING_RESCHEDULED"))["status"] == "processed"
     assert handler.handle(payload("BOOKING_CANCELLED"))["status"] == "processed"
     assert (service.created, service.rescheduled, service.cancelled) == (1, 1, 1)
+
+
+def test_reschedule_com_uid_novo_marca_registro_antigo_como_substituido(tmp_path):
+    # O Cal.com costuma gerar um uid novo a cada remarcação, mandando o uid
+    # antigo em "rescheduleUid". O registro antigo não pode ficar órfão no
+    # banco com o status velho (ex.: "scheduled") - isso confundiria uma
+    # consulta futura por esse uid antigo.
+    store = SyncStore(str(tmp_path / "sync.db"))
+    service = FakeService()
+    handler = SyncHandler(store, service)
+
+    assert handler.handle(payload("BOOKING_PAID", uid="uid-1"))["status"] == "processed"
+
+    resultado = handler.handle(
+        payload("BOOKING_RESCHEDULED", uid="uid-2", reschedule_uid="uid-1")
+    )
+    assert resultado["status"] == "processed"
+    assert service.rescheduled == 1
+
+    antigo = store.get_mapping("uid-1")
+    novo = store.get_mapping("uid-2")
+    assert antigo["status"] == "substituido"
+    assert novo["status"] == "rescheduled"
+    assert novo["feegow_appointment_id"] == antigo["feegow_appointment_id"]
+
+
+def test_reschedule_falha_no_feegow_nao_atualiza_o_banco(tmp_path):
+    # Se o Feegow recusar a remarcação (agora reschedule_booking levanta
+    # RuntimeError nesse caso), o registro não pode ficar marcado como
+    # remarcado no nosso banco sem a mudança ter acontecido de fato.
+    class FakeServiceRecusaRemarcacao(FakeService):
+        def reschedule_booking(self, appointment_id, booking):
+            raise RuntimeError("Falha ao remarcar agendamento Feegow: {'success': False}")
+
+    store = SyncStore(str(tmp_path / "sync.db"))
+    handler = SyncHandler(store, FakeServiceRecusaRemarcacao())
+
+    assert handler.handle(payload("BOOKING_PAID", uid="uid-1"))["status"] == "processed"
+
+    with pytest.raises(RuntimeError, match="Falha ao remarcar agendamento Feegow"):
+        handler.handle(payload("BOOKING_RESCHEDULED", uid="uid-2", reschedule_uid="uid-1"))
+
+    original = store.get_mapping("uid-1")
+    assert original["status"] == "scheduled"
+    assert store.get_mapping("uid-2") is None
 
 
 def test_booking_created_com_sucesso_nao_cancela_nada_no_calcom(tmp_path):
