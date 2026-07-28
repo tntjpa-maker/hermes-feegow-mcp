@@ -18,4 +18,15 @@ SERVICES = {
         "duracao": 30,
     },
 
+    # Consulta de retorno (sem cobrança) - evento dedicado no Cal.com
+    # (drathalita/consulta-retorno, eventTypeId=9). Usa o mesmo procedimento
+    # da consulta presencial, mas registrado no Feegow com retorno=True e
+    # valor=0 (ver FeegowSyncService.create_booking e
+    # ana_feegow.services.retorno_service).
+    "consulta_retorno": {
+        "procedimento_id": 35,
+        "valor": 0,
+        "duracao": 30,
+    },
+
 }

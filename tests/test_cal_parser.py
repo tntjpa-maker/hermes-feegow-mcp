@@ -31,3 +31,24 @@ def test_parser_converte_campos_e_fuso():
     assert booking.nascimento == "1988-05-27"
     assert booking.celular == "21985929056"
     assert booking.tipo_consulta == "consulta_presencial"
+
+
+def test_parser_reconhece_evento_de_consulta_retorno_por_event_type_id():
+    envelope = sample()
+    envelope["payload"]["eventTypeId"] = 9
+    envelope["payload"]["type"] = "consulta-retorno"
+
+    booking = parse_booking(envelope)
+
+    assert booking.tipo_consulta == "consulta_retorno"
+
+
+def test_parser_reconhece_evento_de_consulta_retorno_por_slug():
+    envelope = sample()
+    # eventTypeId ausente/diferente, mas slug identifica o evento de retorno
+    envelope["payload"]["eventTypeId"] = None
+    envelope["payload"]["type"] = "drathalita/consulta-retorno"
+
+    booking = parse_booking(envelope)
+
+    assert booking.tipo_consulta == "consulta_retorno"

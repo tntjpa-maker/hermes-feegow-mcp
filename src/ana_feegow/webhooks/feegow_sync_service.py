@@ -75,6 +75,7 @@ class FeegowSyncService:
             horario=booking.horario,
             celular=booking.celular,
             email=booking.email,
+            retorno=booking.tipo_consulta == "consulta_retorno",
             notas=f"Cal.com UID: {booking.uid}. {booking.notas}".strip(),
             client=self.client,
         )

@@ -19,6 +19,32 @@ class FakeFeegowClient:
         return self.resposta
 
 
+class FakeFeegowClientCompleto:
+    """Fake que atende tanto GET (busca de paciente) quanto POST (criação de
+    agendamento), pra testar create_booking/ensure_patient de ponta a ponta
+    sem bater na API real do Feegow."""
+
+    def __init__(self, paciente_id=42, agendamento_resposta=None):
+        self.paciente_id = paciente_id
+        self.agendamento_resposta = agendamento_resposta or {
+            "success": True,
+            "content": {"agendamento_id": 555},
+        }
+        self.posts = []
+
+    def get(self, endpoint, params=None):
+        if endpoint == "/patient/list":
+            return {
+                "total": 1,
+                "content": [{"patient_id": self.paciente_id}],
+            }
+        raise AssertionError(f"GET inesperado: {endpoint}")
+
+    def post(self, endpoint, payload):
+        self.posts.append((endpoint, payload))
+        return self.agendamento_resposta
+
+
 def booking(**overrides):
     dados = dict(
         uid="uid-1",
@@ -76,3 +102,27 @@ def test_cancel_booking_recusado_pelo_feegow_levanta_runtime_error():
 
     with pytest.raises(RuntimeError, match="Falha ao cancelar agendamento Feegow"):
         service.cancel_booking(31)
+
+
+def test_create_booking_consulta_retorno_e_registrada_com_retorno_true():
+    client = FakeFeegowClientCompleto()
+    service = FeegowSyncService(client=client)
+
+    appointment_id = service.create_booking(booking(tipo_consulta="consulta_retorno"))
+
+    assert appointment_id == 555
+    endpoint, payload = client.posts[0]
+    assert endpoint == "/appoints/new-appoint"
+    assert payload["retorno"] is True
+    # consulta de retorno não é cobrada
+    assert payload["valor"] == 0
+
+
+def test_create_booking_consulta_presencial_nao_marca_retorno():
+    client = FakeFeegowClientCompleto()
+    service = FeegowSyncService(client=client)
+
+    service.create_booking(booking(tipo_consulta="consulta_presencial"))
+
+    _, payload = client.posts[0]
+    assert payload["retorno"] is False

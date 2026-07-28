@@ -138,17 +138,38 @@ class SyncHandler:
         if trigger == "BOOKING_CREATED":
             try:
                 booking = parse_booking(envelope)
-                existing = self.store.get_pending_booking(booking.uid)
-                if existing:
-                    self.store.mark_event(key, trigger, booking.uid)
-                    return {
-                        "status": "duplicate",
-                        "trigger": trigger,
-                        "uid": booking.uid,
-                        "payment_url": existing["payment_url"],
-                    }
-                checkout = self._create_checkout(booking)
-                response["payment_url"] = checkout.payment_url
+
+                # Consulta de retorno (evento dedicado no Cal.com, sem
+                # cobrança): não passa pelo fluxo de checkout do PagBank,
+                # registra direto no Feegow assim que a reserva é criada.
+                if booking.tipo_consulta == "consulta_retorno":
+                    existing_mapping = self.store.get_mapping(booking.uid)
+                    if existing_mapping:
+                        self.store.mark_event(key, trigger, booking.uid)
+                        return {
+                            "status": "duplicate",
+                            "trigger": trigger,
+                            "uid": booking.uid,
+                        }
+                    appointment_id = self.service.create_booking(booking)
+                    self.store.save_mapping(
+                        booking.uid,
+                        booking.booking_id,
+                        appointment_id,
+                        "scheduled",
+                    )
+                else:
+                    existing = self.store.get_pending_booking(booking.uid)
+                    if existing:
+                        self.store.mark_event(key, trigger, booking.uid)
+                        return {
+                            "status": "duplicate",
+                            "trigger": trigger,
+                            "uid": booking.uid,
+                            "payment_url": existing["payment_url"],
+                        }
+                    checkout = self._create_checkout(booking)
+                    response["payment_url"] = checkout.payment_url
             except ValueError as exc:
                 self._cancelar_reserva_com_dados_invalidos(uid, exc)
                 raise

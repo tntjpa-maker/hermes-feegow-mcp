@@ -49,6 +49,11 @@ def _birth_date(value) -> str:
 def _consultation_type(payload: dict) -> str:
     event_id = payload.get("eventTypeId")
     slug = str(payload.get("type", "")).lower()
+    # eventTypeId 9 = "Consulta Retorno" (cal.magnoliasdm.com.br/drathalita/consulta-retorno).
+    # Consulta de retorno sem cobrança - ver sync_handler.handle() e
+    # ana_feegow.services.retorno_service.
+    if event_id == 9 or "consulta-retorno" in slug or "retorno" in slug:
+        return "consulta_retorno"
     if event_id == 7 or "niteroi" in slug or "presencial" in slug:
         return "consulta_presencial"
     if "hibrid" in slug:
