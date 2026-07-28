@@ -37,11 +37,13 @@ def payload_retorno(trigger, uid="uid-retorno-1", reschedule_uid=None):
         "eventTypeId": 9,
         "type": "consulta-retorno",
         "startTime": "2026-08-05T14:00:00Z",
+        # O formulário real do evento "Consulta Retorno" no Cal.com só
+        # coleta nome/email/celular (sem CPF nem data de nascimento) - ver
+        # cal_parser.parse_booking() e feegow_sync_service.ensure_patient(),
+        # que tratam retorno como paciente já cadastrada na Feegow.
         "responses": {
             "name": {"value": "Paciente Retorno"},
             "email": {"value": "retorno@example.com"},
-            "cpf": {"value": "11767993714"},
-            "data_nascimento": {"value": "27051988"},
             "celular": {"value": "21985929056"},
         },
     }

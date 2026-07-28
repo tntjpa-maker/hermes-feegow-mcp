@@ -32,6 +32,12 @@ def _digits(value) -> str:
 
 def _birth_date(value) -> str:
     text = str(value or "").strip()
+    if not text:
+        # Alguns tipos de evento (ex.: "Consulta Retorno") não coletam data
+        # de nascimento no formulário do Cal.com, pois pressupõem paciente
+        # já cadastrada na Feegow - ver parse_booking() e
+        # feegow_sync_service.ensure_patient().
+        return ""
     digits = _digits(text)
     if len(digits) == 8:
         try:
@@ -82,16 +88,25 @@ def parse_booking(envelope: dict) -> CalBooking:
         str(payload["startTime"]).replace("Z", "+00:00")
     ).astimezone(ZoneInfo("America/Sao_Paulo"))
 
+    tipo_consulta = _consultation_type(payload)
+
     if not payload.get("uid"):
         raise ValueError("UID da reserva ausente.")
-    if not nome or not email or not cpf or not celular:
+    if tipo_consulta == "consulta_retorno":
+        # Retorno não cobra e pressupõe paciente já cadastrada na Feegow
+        # (ver retorno_service.verificar_elegibilidade_retorno) - o
+        # formulário do Cal.com para este evento só coleta nome/email/
+        # celular, sem CPF nem data de nascimento.
+        if not nome or not email or not celular:
+            raise ValueError("Dados obrigatórios da paciente ausentes.")
+    elif not nome or not email or not cpf or not celular:
         raise ValueError("Dados obrigatórios da paciente ausentes.")
 
     return CalBooking(
         uid=str(payload["uid"]),
         booking_id=payload.get("bookingId"),
         event_type_id=payload.get("eventTypeId"),
-        tipo_consulta=_consultation_type(payload),
+        tipo_consulta=tipo_consulta,
         data=start.strftime("%Y-%m-%d"),
         horario=start.strftime("%H:%M:%S"),
         nome=nome,

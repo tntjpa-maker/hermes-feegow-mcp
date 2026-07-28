@@ -45,13 +45,27 @@ class FeegowSyncService:
         self.client = client or FeegowClient()
 
     def ensure_patient(self, booking):
-        result = buscar_paciente(cpf=booking.cpf, client=self.client)
-        patient_id = _find_id(result)
-        if not patient_id:
-            result = buscar_paciente(telefone=booking.celular, client=self.client)
-            patient_id = _find_id(result)
+        patient_id = None
+        if booking.cpf:
+            patient_id = _find_id(buscar_paciente(cpf=booking.cpf, client=self.client))
+        if not patient_id and booking.celular:
+            patient_id = _find_id(
+                buscar_paciente(telefone=booking.celular, client=self.client)
+            )
         if patient_id:
             return patient_id
+
+        if booking.tipo_consulta == "consulta_retorno":
+            # Retorno pressupõe paciente já cadastrada na Feegow (ela teve
+            # uma consulta atendida recentemente - ver
+            # retorno_service.verificar_elegibilidade_retorno). O formulário
+            # deste evento no Cal.com não coleta CPF nem data de nascimento,
+            # então não temos dados válidos para cadastrar uma paciente nova
+            # aqui - só para localizar uma já existente por telefone/CPF.
+            raise ValueError(
+                "Paciente não encontrada no Feegow para consulta de "
+                "retorno (telefone/CPF ausentes ou não localizados)."
+            )
 
         result = criar_paciente(
             nome=booking.nome,

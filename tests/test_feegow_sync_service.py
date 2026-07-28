@@ -126,3 +126,70 @@ def test_create_booking_consulta_presencial_nao_marca_retorno():
 
     _, payload = client.posts[0]
     assert payload["retorno"] is False
+
+
+class FakeFeegowClientBuscaPorTelefone:
+    """Fake que só localiza a paciente por telefone via /patient/list (não
+    tem CPF nenhum cadastrado) - reproduz o payload real do evento
+    "Consulta Retorno", que só coleta nome/email/celular."""
+
+    def __init__(self, celular_cadastrado, paciente_id=42):
+        self.celular_cadastrado = celular_cadastrado
+        self.paciente_id = paciente_id
+        self.posts = []
+
+    def get(self, endpoint, params=None):
+        assert endpoint == "/patient/list"
+        offset = params.get("offset", 0)
+        limit = params.get("limit", 200)
+        pacientes = [
+            {"patient_id": self.paciente_id, "celular": self.celular_cadastrado}
+        ]
+        pagina = pacientes[offset : offset + limit]
+        return {"total": len(pacientes), "content": pagina}
+
+    def post(self, endpoint, payload):
+        self.posts.append((endpoint, payload))
+        return {"success": True, "content": {"agendamento_id": 555}}
+
+
+def test_ensure_patient_de_retorno_localiza_paciente_so_por_telefone_sem_cpf():
+    # Bug real observado em produção em 28/07/2026: o formulário do evento
+    # "Consulta Retorno" não coleta CPF nem data de nascimento, então o
+    # booking chega com cpf="" e nascimento="". Antes do fix, isso quebrava
+    # (buscar_paciente(cpf="") levantava ValueError, ou o código caía em
+    # criar_paciente com dados vazios e a Feegow recusava por "Data de
+    # nascimento inválida").
+    client = FakeFeegowClientBuscaPorTelefone(celular_cadastrado="21985929056")
+    service = FeegowSyncService(client=client)
+    reserva = booking(
+        tipo_consulta="consulta_retorno",
+        cpf="",
+        nascimento="",
+        celular="21985929056",
+    )
+
+    appointment_id = service.create_booking(reserva)
+
+    assert appointment_id == 555
+
+
+def test_ensure_patient_de_retorno_sem_paciente_encontrada_nao_cria_paciente_nova():
+    # Sem CPF/nascimento reais, não faz sentido cadastrar uma paciente nova
+    # na Feegow para um retorno - se ela não for localizada por telefone,
+    # o correto é falhar com um erro claro (que o sync_handler já trata
+    # cancelando a reserva no Cal.com automaticamente).
+    client = FakeFeegowClientBuscaPorTelefone(celular_cadastrado="21999999999")
+    service = FeegowSyncService(client=client)
+    reserva = booking(
+        tipo_consulta="consulta_retorno",
+        cpf="",
+        nascimento="",
+        celular="21985929056",
+    )
+
+    with pytest.raises(ValueError, match="Paciente não encontrada"):
+        service.create_booking(reserva)
+
+    # nunca deve tentar criar uma paciente nova nesse fluxo
+    assert client.posts == []

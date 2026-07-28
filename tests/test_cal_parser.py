@@ -1,3 +1,5 @@
+import pytest
+
 from ana_feegow.webhooks.cal_parser import parse_booking
 
 
@@ -52,3 +54,46 @@ def test_parser_reconhece_evento_de_consulta_retorno_por_slug():
     booking = parse_booking(envelope)
 
     assert booking.tipo_consulta == "consulta_retorno"
+
+
+def test_parser_aceita_consulta_retorno_sem_cpf_e_sem_nascimento():
+    # Reproduz o payload real do evento "Consulta Retorno" no Cal.com, que
+    # só coleta nome/email/celular - CPF e data de nascimento não existem
+    # no formulário (bug real observado em produção em 28/07/2026, ver
+    # ensure_patient() em feegow_sync_service.py).
+    envelope = sample()
+    envelope["payload"]["eventTypeId"] = 9
+    envelope["payload"]["type"] = "consulta-retorno"
+    envelope["payload"]["responses"] = {
+        "name": {"value": "Paciente Retorno"},
+        "email": {"value": "retorno@example.com"},
+        "celular": {"value": "(21) 98592-9056"},
+    }
+
+    booking = parse_booking(envelope)
+
+    assert booking.tipo_consulta == "consulta_retorno"
+    assert booking.cpf == ""
+    assert booking.nascimento == ""
+    assert booking.celular == "21985929056"
+
+
+def test_parser_recusa_consulta_retorno_sem_celular():
+    envelope = sample()
+    envelope["payload"]["eventTypeId"] = 9
+    envelope["payload"]["type"] = "consulta-retorno"
+    envelope["payload"]["responses"] = {
+        "name": {"value": "Paciente Retorno"},
+        "email": {"value": "retorno@example.com"},
+    }
+
+    with pytest.raises(ValueError):
+        parse_booking(envelope)
+
+
+def test_parser_ainda_exige_cpf_para_consulta_presencial_normal():
+    envelope = sample()
+    envelope["payload"]["responses"]["cpf"] = {"value": ""}
+
+    with pytest.raises(ValueError):
+        parse_booking(envelope)
