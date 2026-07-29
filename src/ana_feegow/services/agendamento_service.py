@@ -60,10 +60,18 @@ def agendar_consulta(
         "email": email,
         "retorno": retorno,
         "sys_user": CLINIC["sys_user"],
-        # Consulta online é feita por videochamada (Google Meet, gerado pelo
-        # Cal.com) - sinaliza o agendamento como telemedicina no Feegow. Ver
-        # cal_parser._consultation_type() e SERVICES["consulta_online"].
-        "telemedicina": tipo_consulta == "consulta_online",
+        # NOTA: a API do Feegow (POST /appoints/new-appoint) não aceita/persiste
+        # um campo "telemedicina" no payload de criação - confirmado via teste
+        # real (GET /appoints/search retornou "telemedicina": false mesmo
+        # enviando true). Segundo a documentação oficial do Feegow, essa
+        # marcação é uma configuração de nível de PROCEDIMENTO feita no painel
+        # admin (Cadastros > Procedimentos > "Procedimento Telemedicina"), e só
+        # fica disponível depois de contratar o módulo de Telemedicina do
+        # Feegow com o time comercial deles - módulo que a clínica não
+        # contratou (não usamos a videochamada própria do Feegow; o Google
+        # Meet é gerado via Cal.com). Por isso o campo foi removido daqui; a
+        # sinalização de consulta online fica só na nota do agendamento (ver
+        # FeegowSyncService.create_booking).
     }
 
     try:

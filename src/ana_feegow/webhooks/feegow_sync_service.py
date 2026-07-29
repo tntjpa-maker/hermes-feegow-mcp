@@ -82,6 +82,11 @@ class FeegowSyncService:
 
     def create_booking(self, booking):
         patient_id = self.ensure_patient(booking)
+        # O Feegow não expõe um campo "telemedicina" gravável via API (ver
+        # comentário em agendamento_service.agendar_consulta) - como
+        # alternativa, deixamos essa informação registrada na própria nota do
+        # agendamento, visível para quem olhar o agendamento no Feegow.
+        prefixo = "[TELEMEDICINA] " if booking.tipo_consulta == "consulta_online" else ""
         result = agendar_consulta(
             paciente_id=patient_id,
             tipo_consulta=booking.tipo_consulta,
@@ -90,7 +95,7 @@ class FeegowSyncService:
             celular=booking.celular,
             email=booking.email,
             retorno=booking.tipo_consulta == "consulta_retorno",
-            notas=f"Cal.com UID: {booking.uid}. {booking.notas}".strip(),
+            notas=f"{prefixo}Cal.com UID: {booking.uid}. {booking.notas}".strip(),
             client=self.client,
         )
         if not result.get("success"):
