@@ -139,10 +139,14 @@ class SyncHandler:
             try:
                 booking = parse_booking(envelope)
 
-                # Consulta de retorno (evento dedicado no Cal.com, sem
-                # cobrança): não passa pelo fluxo de checkout do PagBank,
-                # registra direto no Feegow assim que a reserva é criada.
-                if booking.tipo_consulta == "consulta_retorno":
+                # Consulta de retorno, presencial ou online (eventos
+                # dedicados no Cal.com, sem cobrança): não passa pelo fluxo
+                # de checkout do PagBank, registra direto no Feegow assim
+                # que a reserva é criada.
+                if booking.tipo_consulta in (
+                    "consulta_retorno",
+                    "consulta_retorno_online",
+                ):
                     existing_mapping = self.store.get_mapping(booking.uid)
                     if existing_mapping:
                         self.store.mark_event(key, trigger, booking.uid)

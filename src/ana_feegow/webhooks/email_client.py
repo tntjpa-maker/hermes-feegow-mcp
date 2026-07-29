@@ -19,6 +19,8 @@ TIPOS_CONSULTA_LABEL = {
     "consulta_presencial": "Presencial",
     "consulta_hibrida": "Híbrida",
     "consulta_online": "Online",
+    "consulta_retorno": "Retorno",
+    "consulta_retorno_online": "Retorno Online",
 }
 
 

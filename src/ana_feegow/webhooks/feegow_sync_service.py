@@ -55,13 +55,15 @@ class FeegowSyncService:
         if patient_id:
             return patient_id
 
-        if booking.tipo_consulta == "consulta_retorno":
-            # Retorno pressupõe paciente já cadastrada na Feegow (ela teve
-            # uma consulta atendida recentemente - ver
+        if booking.tipo_consulta in ("consulta_retorno", "consulta_retorno_online"):
+            # Retorno (presencial ou online) pressupõe paciente já
+            # cadastrada na Feegow (ela teve uma consulta atendida
+            # recentemente - ver
             # retorno_service.verificar_elegibilidade_retorno). O formulário
-            # deste evento no Cal.com não coleta CPF nem data de nascimento,
-            # então não temos dados válidos para cadastrar uma paciente nova
-            # aqui - só para localizar uma já existente por telefone/CPF.
+            # desses eventos no Cal.com não coleta CPF nem data de
+            # nascimento, então não temos dados válidos para cadastrar uma
+            # paciente nova aqui - só para localizar uma já existente por
+            # telefone/CPF.
             raise ValueError(
                 "Paciente não encontrada no Feegow para consulta de "
                 "retorno (telefone/CPF ausentes ou não localizados)."
@@ -86,7 +88,9 @@ class FeegowSyncService:
         # comentário em agendamento_service.agendar_consulta) - como
         # alternativa, deixamos essa informação registrada na própria nota do
         # agendamento, visível para quem olhar o agendamento no Feegow.
-        prefixo = "[TELEMEDICINA] " if booking.tipo_consulta == "consulta_online" else ""
+        TIPOS_TELEMEDICINA = ("consulta_online", "consulta_retorno_online")
+        TIPOS_RETORNO = ("consulta_retorno", "consulta_retorno_online")
+        prefixo = "[TELEMEDICINA] " if booking.tipo_consulta in TIPOS_TELEMEDICINA else ""
         result = agendar_consulta(
             paciente_id=patient_id,
             tipo_consulta=booking.tipo_consulta,
@@ -94,7 +98,7 @@ class FeegowSyncService:
             horario=booking.horario,
             celular=booking.celular,
             email=booking.email,
-            retorno=booking.tipo_consulta == "consulta_retorno",
+            retorno=booking.tipo_consulta in TIPOS_RETORNO,
             notas=f"{prefixo}Cal.com UID: {booking.uid}. {booking.notas}".strip(),
             client=self.client,
         )

@@ -126,3 +126,10 @@ def link_consulta_online() -> str:
 
     base = settings.CALCOM_BASE_URL.rstrip("/")
     return f"{base}/{CLINIC['calcom_slug_online']}"
+
+
+def link_consulta_retorno_online() -> str:
+    from ana_feegow.config import settings
+
+    base = settings.CALCOM_BASE_URL.rstrip("/")
+    return f"{base}/{CLINIC['calcom_slug_retorno_online']}"

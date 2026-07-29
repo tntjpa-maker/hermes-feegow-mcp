@@ -18,4 +18,5 @@ CLINIC = {
     "calcom_slug_retorno": "drathalita/consulta-retorno",
     "calcom_slug_presencial": "drathalita/niteroi",
     "calcom_slug_online": "drathalita/consulta-online",
+    "calcom_slug_retorno_online": "drathalita/consulta-retorno-online",
 }

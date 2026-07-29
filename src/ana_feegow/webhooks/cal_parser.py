@@ -55,6 +55,13 @@ def _birth_date(value) -> str:
 def _consultation_type(payload: dict) -> str:
     event_id = payload.get("eventTypeId")
     slug = str(payload.get("type", "")).lower()
+    # Precisa vir ANTES da checagem isolada de "retorno" logo abaixo: o slug
+    # do evento "Consulta Retorno Online" (drathalita/consulta-retorno-online)
+    # contém tanto "retorno" quanto "online", e sem essa checagem combinada
+    # primeiro ele cairia no ramo de retorno presencial, perdendo a
+    # sinalização de telemedicina (ver FeegowSyncService.create_booking).
+    if "retorno" in slug and "online" in slug:
+        return "consulta_retorno_online"
     # eventTypeId 9 = "Consulta Retorno" (cal.magnoliasdm.com.br/drathalita/consulta-retorno).
     # Consulta de retorno sem cobrança - ver sync_handler.handle() e
     # ana_feegow.services.retorno_service.
@@ -92,11 +99,12 @@ def parse_booking(envelope: dict) -> CalBooking:
 
     if not payload.get("uid"):
         raise ValueError("UID da reserva ausente.")
-    if tipo_consulta == "consulta_retorno":
-        # Retorno não cobra e pressupõe paciente já cadastrada na Feegow
-        # (ver retorno_service.verificar_elegibilidade_retorno) - o
-        # formulário do Cal.com para este evento só coleta nome/email/
-        # celular, sem CPF nem data de nascimento.
+    if tipo_consulta in ("consulta_retorno", "consulta_retorno_online"):
+        # Retorno (presencial ou online) não cobra e pressupõe paciente já
+        # cadastrada na Feegow (ver
+        # retorno_service.verificar_elegibilidade_retorno) - o formulário do
+        # Cal.com para esses eventos só coleta nome/email/celular, sem CPF
+        # nem data de nascimento.
         if not nome or not email or not celular:
             raise ValueError("Dados obrigatórios da paciente ausentes.")
     elif not nome or not email or not cpf or not celular:

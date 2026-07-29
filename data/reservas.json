@@ -7,5 +7,23 @@
     "created_at": "2026-07-07T17:26:55.362327",
     "expires_at": "2026-07-07T17:56:55.362327",
     "warning_at": "2026-07-07T17:51:55.362327"
+  },
+  {
+    "success": true,
+    "agendamento_id": 31,
+    "paciente_id": 68,
+    "status": "aguardando_pagamento",
+    "created_at": "2026-07-28T21:53:18.109880",
+    "expires_at": "2026-07-28T22:23:18.109880",
+    "warning_at": "2026-07-28T22:18:18.109880"
+  },
+  {
+    "success": true,
+    "agendamento_id": 31,
+    "paciente_id": 68,
+    "status": "aguardando_pagamento",
+    "created_at": "2026-07-28T21:53:59.231338",
+    "expires_at": "2026-07-28T22:23:59.231338",
+    "warning_at": "2026-07-28T22:18:59.231338"
   }
 ]

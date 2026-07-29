@@ -121,3 +121,49 @@ def test_parser_exige_cpf_para_consulta_online():
 
     with pytest.raises(ValueError):
         parse_booking(envelope)
+
+
+def test_parser_reconhece_evento_de_consulta_retorno_online_por_slug():
+    # O slug "consulta-retorno-online" contém tanto "retorno" quanto
+    # "online" - precisa cair no tipo dedicado, e não no retorno presencial
+    # nem na consulta online paga (ver _consultation_type()).
+    envelope = sample()
+    envelope["payload"]["eventTypeId"] = None
+    envelope["payload"]["type"] = "drathalita/consulta-retorno-online"
+
+    booking = parse_booking(envelope)
+
+    assert booking.tipo_consulta == "consulta_retorno_online"
+
+
+def test_parser_aceita_consulta_retorno_online_sem_cpf_e_sem_nascimento():
+    # Mesmo comportamento do retorno presencial: formulário só coleta
+    # nome/email/celular.
+    envelope = sample()
+    envelope["payload"]["eventTypeId"] = None
+    envelope["payload"]["type"] = "drathalita/consulta-retorno-online"
+    envelope["payload"]["responses"] = {
+        "name": {"value": "Paciente Retorno Online"},
+        "email": {"value": "retorno.online@example.com"},
+        "celular": {"value": "(21) 98592-9056"},
+    }
+
+    booking = parse_booking(envelope)
+
+    assert booking.tipo_consulta == "consulta_retorno_online"
+    assert booking.cpf == ""
+    assert booking.nascimento == ""
+    assert booking.celular == "21985929056"
+
+
+def test_parser_recusa_consulta_retorno_online_sem_celular():
+    envelope = sample()
+    envelope["payload"]["eventTypeId"] = None
+    envelope["payload"]["type"] = "drathalita/consulta-retorno-online"
+    envelope["payload"]["responses"] = {
+        "name": {"value": "Paciente Retorno Online"},
+        "email": {"value": "retorno.online@example.com"},
+    }
+
+    with pytest.raises(ValueError):
+        parse_booking(envelope)

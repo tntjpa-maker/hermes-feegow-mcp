@@ -161,6 +161,43 @@ def test_create_booking_consulta_presencial_nao_marca_telemedicina_na_nota():
     assert not payload["notas"].startswith("[TELEMEDICINA]")
 
 
+def test_create_booking_consulta_retorno_online_marca_retorno_e_telemedicina():
+    # Consulta de retorno online: mesma regra de negócio da consulta de
+    # retorno presencial (retorno=True, sem cobrança), mas sinalizada como
+    # telemedicina na nota do agendamento, igual à consulta online paga.
+    client = FakeFeegowClientCompleto()
+    service = FeegowSyncService(client=client)
+
+    service.create_booking(booking(tipo_consulta="consulta_retorno_online"))
+
+    _, payload = client.posts[0]
+    assert "telemedicina" not in payload
+    assert payload["notas"].startswith("[TELEMEDICINA] ")
+    assert payload["retorno"] is True
+    # consulta de retorno online também não é cobrada
+    assert payload["valor"] == 0
+
+
+def test_ensure_patient_de_retorno_online_levanta_erro_sem_paciente_localizada():
+    # Mesma regra do retorno presencial: o formulário do evento "Consulta
+    # Retorno Online" não coleta CPF/data de nascimento, então se a
+    # paciente não for localizada por telefone/CPF não podemos cadastrar
+    # uma nova - precisa falhar com um erro claro.
+    client = FakeFeegowClientBuscaPorTelefone(celular_cadastrado="21999999999")
+    service = FeegowSyncService(client=client)
+    reserva = booking(
+        tipo_consulta="consulta_retorno_online",
+        cpf="",
+        nascimento="",
+        celular="21985929056",
+    )
+
+    with pytest.raises(ValueError, match="Paciente não encontrada"):
+        service.create_booking(reserva)
+
+    assert client.posts == []
+
+
 class FakeFeegowClientBuscaPorTelefone:
     """Fake que só localiza a paciente por telefone via /patient/list (não
     tem CPF nenhum cadastrado) - reproduz o payload real do evento
