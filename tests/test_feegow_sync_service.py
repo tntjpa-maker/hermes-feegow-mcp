@@ -128,6 +128,33 @@ def test_create_booking_consulta_presencial_nao_marca_retorno():
     assert payload["retorno"] is False
 
 
+def test_create_booking_consulta_online_marca_telemedicina_true():
+    # Consulta online é feita por Google Meet - o agendamento no Feegow
+    # precisa ser sinalizado como telemedicina para diferenciar da consulta
+    # presencial (ver agendamento_service.agendar_consulta()).
+    client = FakeFeegowClientCompleto()
+    service = FeegowSyncService(client=client)
+
+    service.create_booking(booking(tipo_consulta="consulta_online"))
+
+    _, payload = client.posts[0]
+    assert payload["telemedicina"] is True
+    assert payload["retorno"] is False
+    # SERVICES["consulta_online"]["valor"] = 25000 (R$250,00) -> sinal de
+    # 20% cobrado via PagBank = R$50,00 (ver test_pagbank_flow.py).
+    assert payload["valor"] == 25000
+
+
+def test_create_booking_consulta_presencial_nao_marca_telemedicina():
+    client = FakeFeegowClientCompleto()
+    service = FeegowSyncService(client=client)
+
+    service.create_booking(booking(tipo_consulta="consulta_presencial"))
+
+    _, payload = client.posts[0]
+    assert payload["telemedicina"] is False
+
+
 class FakeFeegowClientBuscaPorTelefone:
     """Fake que só localiza a paciente por telefone via /patient/list (não
     tem CPF nenhum cadastrado) - reproduz o payload real do evento

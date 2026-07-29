@@ -60,6 +60,10 @@ def agendar_consulta(
         "email": email,
         "retorno": retorno,
         "sys_user": CLINIC["sys_user"],
+        # Consulta online é feita por videochamada (Google Meet, gerado pelo
+        # Cal.com) - sinaliza o agendamento como telemedicina no Feegow. Ver
+        # cal_parser._consultation_type() e SERVICES["consulta_online"].
+        "telemedicina": tipo_consulta == "consulta_online",
     }
 
     try:

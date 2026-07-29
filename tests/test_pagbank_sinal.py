@@ -1,0 +1,16 @@
+from ana_feegow.webhooks.pagbank_client import _valor_sinal_centavos
+
+
+def test_sinal_consulta_presencial_e_20_por_cento_do_valor():
+    # SERVICES["consulta_presencial"]["valor"] = 35000 (R$350,00).
+    assert _valor_sinal_centavos("consulta_presencial") == 7000
+
+
+def test_sinal_consulta_online_e_20_por_cento_do_valor():
+    # SERVICES["consulta_online"]["valor"] = 25000 (R$250,00) -> sinal de
+    # R$50,00 cobrado via PagBank no momento do agendamento.
+    assert _valor_sinal_centavos("consulta_online") == 5000
+
+
+def test_sinal_consulta_retorno_e_zero():
+    assert _valor_sinal_centavos("consulta_retorno") == 0

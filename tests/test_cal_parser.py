@@ -97,3 +97,27 @@ def test_parser_ainda_exige_cpf_para_consulta_presencial_normal():
 
     with pytest.raises(ValueError):
         parse_booking(envelope)
+
+
+def test_parser_reconhece_evento_de_consulta_online_por_slug():
+    envelope = sample()
+    envelope["payload"]["eventTypeId"] = None
+    envelope["payload"]["type"] = "drathalita/consulta-online"
+
+    booking = parse_booking(envelope)
+
+    assert booking.tipo_consulta == "consulta_online"
+
+
+def test_parser_exige_cpf_para_consulta_online():
+    # Consulta online não é isenta como a de retorno - o formulário do
+    # Cal.com para este evento coleta CPF normalmente (paciente pode ser
+    # nova), então o parser deve continuar exigindo os mesmos dados da
+    # consulta presencial.
+    envelope = sample()
+    envelope["payload"]["eventTypeId"] = None
+    envelope["payload"]["type"] = "drathalita/consulta-online"
+    envelope["payload"]["responses"]["cpf"] = {"value": ""}
+
+    with pytest.raises(ValueError):
+        parse_booking(envelope)

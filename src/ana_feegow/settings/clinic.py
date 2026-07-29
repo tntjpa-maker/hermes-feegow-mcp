@@ -17,4 +17,5 @@ CLINIC = {
     # retorno. Ver ana_feegow.services.retorno_service.
     "calcom_slug_retorno": "drathalita/consulta-retorno",
     "calcom_slug_presencial": "drathalita/niteroi",
+    "calcom_slug_online": "drathalita/consulta-online",
 }
