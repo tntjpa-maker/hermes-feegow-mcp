@@ -1,25 +1,21 @@
 def decidir(mensagem: str) -> dict:
+    # Ordem importa: intenções mais específicas (pedido de atendimento
+    # humano, cancelamento, remarcação, perguntas informativas) são
+    # checadas antes do gatilho genérico de agendamento, porque palavras
+    # como "consulta" aparecem tanto em "quero marcar uma consulta" quanto
+    # em "quanto custa a consulta?" - sem essa ordem, a segunda seria
+    # classificada erroneamente como pedido de agendamento.
     msg = mensagem.lower().strip()
 
     if any(x in msg for x in [
-        "consulta",
-        "agendar",
-        "marcar",
-        "horário",
-        "horario",
+        "atendente",
+        "humano",
+        "secretária",
+        "secretaria",
     ]):
         return {
-            "acao": "AGENDAR",
-            "intencao": "agendamento",
-        }
-
-    if any(x in msg for x in [
-        "remarcar",
-        "reagendar",
-    ]):
-        return {
-            "acao": "REMARCAR",
-            "intencao": "remarcacao",
+            "acao": "HUMANO",
+            "intencao": "atendimento_humano",
         }
 
     if any(x in msg for x in [
@@ -32,14 +28,12 @@ def decidir(mensagem: str) -> dict:
         }
 
     if any(x in msg for x in [
-        "atendente",
-        "humano",
-        "secretária",
-        "secretaria",
+        "remarcar",
+        "reagendar",
     ]):
         return {
-            "acao": "HUMANO",
-            "intencao": "atendimento_humano",
+            "acao": "REMARCAR",
+            "intencao": "remarcacao",
         }
 
     if any(x in msg for x in [
@@ -56,8 +50,9 @@ def decidir(mensagem: str) -> dict:
     if any(x in msg for x in [
         "endereço",
         "endereco",
-        "local",
         "onde fica",
+        "localização",
+        "localizacao",
     ]):
         return {
             "acao": "RESPONDER",
@@ -67,7 +62,8 @@ def decidir(mensagem: str) -> dict:
     if any(x in msg for x in [
         "convênio",
         "convenio",
-        "plano",
+        "plano de saúde",
+        "plano de saude",
         "unimed",
         "amil",
         "bradesco",
@@ -75,6 +71,18 @@ def decidir(mensagem: str) -> dict:
         return {
             "acao": "RESPONDER",
             "intencao": "convenio",
+        }
+
+    if any(x in msg for x in [
+        "consulta",
+        "agendar",
+        "marcar",
+        "horário",
+        "horario",
+    ]):
+        return {
+            "acao": "AGENDAR",
+            "intencao": "agendamento",
         }
 
     return {

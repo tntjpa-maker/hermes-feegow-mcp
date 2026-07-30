@@ -4,40 +4,7 @@ from ana_feegow.services.cancelamento_service import cancelar_consulta
 from ana_feegow.services.remarcacao_service import remarcar_consulta
 from ana_feegow.tools.create_patient import criar_paciente
 from ana_feegow.tools.patients import buscar_paciente
-
-
-def _find_id(value):
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
-    if isinstance(value, dict):
-        for key in (
-            "agendamento_id",
-            "appointment_id",
-            "patient_id",
-            "paciente_id",
-            "id",
-        ):
-            candidate = _find_id(value.get(key))
-            if candidate:
-                return candidate
-        for key in ("content", "paciente", "agendamento", "data"):
-            candidate = _find_id(value.get(key))
-            if candidate:
-                return candidate
-        for item in value.values():
-            candidate = _find_id(item)
-            if candidate:
-                return candidate
-    if isinstance(value, list):
-        for item in value:
-            candidate = _find_id(item)
-            if candidate:
-                return candidate
-    return None
+from ana_feegow.utils.response import find_id as _find_id
 
 
 class FeegowSyncService:
