@@ -8,6 +8,9 @@ cd "$PROJECT_DIR"
 # Credencial do git fica no volume persistente - $HOME nao sobrevive a redeploy.
 git config --global credential.helper "store --file=/opt/data/.git-credentials" 2>/dev/null || true
 
+# Corrige permissoes da pasta whatsapp-bridge para o usuario hermes poder rodar npm install
+chown -R hermes:hermes /opt/hermes/scripts/whatsapp-bridge 2>/dev/null || true
+
 WEBHOOK_PID=""
 GATEWAY_PID=""
 
