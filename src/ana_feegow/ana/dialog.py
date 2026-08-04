@@ -2,17 +2,14 @@ from ana_feegow.ana.conversation import Conversation
 from ana_feegow.ana.decision import decidir
 from ana_feegow.ana.knowledge import RESPOSTAS
 from ana_feegow.errors import FeegowError
-from ana_feegow.tools.availability import consultar_horarios
-from ana_feegow.tools.create_patient import criar_paciente
 from ana_feegow.ana.service import identificar_servico
-from ana_feegow.services.agendamento_service import agendar_consulta
 from ana_feegow.services.retorno_service import (
+    link_consulta_online,
     link_consulta_presencial,
     link_consulta_retorno,
+    link_consulta_retorno_online,
     verificar_elegibilidade_retorno,
 )
-from ana_feegow.tools.identify import identificar_paciente
-from ana_feegow.utils.response import find_id
 
 
 def responder(telefone: str, mensagem: str):
@@ -22,13 +19,14 @@ def responder(telefone: str, mensagem: str):
     acao = decidir(mensagem)
     intencao = acao.get("intencao")
 
-    # Perguntas informativas (preço, endereço, convênio) são respondidas
-    # diretamente, sem depender do estado atual da conversa - antes desta
-    # checagem, "acao" era calculado mas nunca usado, então qualquer
-    # pergunta feita fora da sequência esperada (por exemplo "onde fica a
-    # clínica?" logo na primeira mensagem, ou "quanto custa?" no meio de um
-    # agendamento em andamento) caía sempre na resposta fixa do estado
-    # atual, ignorando o que a paciente realmente perguntou.
+    # Perguntas informativas (preço, endereço, convênio, explicação sobre
+    # os tipos de consulta) são respondidas diretamente, sem depender do
+    # estado atual da conversa - antes desta checagem, "acao" era
+    # calculado mas nunca usado, então qualquer pergunta feita fora da
+    # sequência esperada (por exemplo "onde fica a clínica?" logo na
+    # primeira mensagem, ou "quanto custa?" no meio de um agendamento em
+    # andamento) caía sempre na resposta fixa do estado atual, ignorando o
+    # que a paciente realmente perguntou.
     if acao.get("acao") == "RESPONDER" and intencao in RESPOSTAS:
         resposta_informativa = RESPOSTAS[intencao]
 
@@ -38,8 +36,7 @@ def responder(telefone: str, mensagem: str):
             conv.next("aguardando_motivo")
             return (
                 resposta_informativa
-                + "\n\nSe quiser, posso te ajudar a agendar agora. "
-                "É sua primeira consulta ou retorno?"
+                + "\n\nSe quiser, posso te ajudar a agendar."
             )
 
         # Em qualquer outro estado, respondemos sem alterar o estado atual,
@@ -49,9 +46,17 @@ def responder(telefone: str, mensagem: str):
 
     if conv.state == "inicio":
         conv.next("aguardando_motivo")
+        # Saudação humana e neutra - não emenda a pergunta "primeira
+        # consulta ou retorno?" logo depois de um "bom dia", porque isso
+        # soa como um menu de atendimento automático, não como uma
+        # secretária de verdade (ver SOUL.md, seções 1 e 5). O que a
+        # paciente disser em seguida já é suficiente para o próximo passo
+        # decidir se é retorno ou consulta nova, no estado
+        # "aguardando_motivo" logo abaixo.
         return (
-            "Olá! 😊 Sou a ANA, secretária virtual da Dra. Thalita.\n\n"
-            "É sua primeira consulta ou retorno?"
+            "Oi! 😊 Aqui é a Ana, da Clínica Magnólia — assistente da "
+            "Dra. Thalita.\n\n"
+            "Como posso te ajudar?"
         )
 
     if conv.state == "aguardando_motivo":
@@ -70,16 +75,17 @@ def responder(telefone: str, mensagem: str):
                 )
 
             conv.update("elegibilidade_retorno", elegibilidade)
-            conv.next("finalizado")
 
             if elegibilidade["elegivel"]:
+                conv.next("aguardando_modalidade_retorno")
                 return (
                     "Que bom te ver novamente! Como sua última consulta foi há "
                     f"{elegibilidade['dias_desde_ultima']} dia(s), você pode "
-                    "agendar seu retorno sem custo pelo link abaixo:\n\n"
-                    f"{link_consulta_retorno()}"
+                    "agendar seu retorno sem custo. Esse retorno vai ser "
+                    "online ou presencial?"
                 )
 
+            conv.next("finalizado")
             return (
                 "Verifiquei aqui e o prazo para retorno gratuito (30 dias após "
                 "a última consulta) já passou, então este agendamento será "
@@ -88,129 +94,48 @@ def responder(telefone: str, mensagem: str):
                 f"{link_consulta_presencial()}"
             )
 
-        conv.next("aguardando_data")
-        return "Qual dia você prefere para a consulta? (dd/mm/aaaa)"
-
-    if conv.state == "aguardando_data":
-        mensagem = mensagem.replace("/", "-")
-        conv.update("data", mensagem)
-
-        tipo_consulta = identificar_servico(conv.data["motivo"])
+        # Consulta nova (não é retorno): a ANA nunca pergunta data nem
+        # horário - ela identifica o tipo de serviço e envia direto o link
+        # do Cal.com correspondente, para a paciente escolher livremente o
+        # melhor dia e horário por conta própria. A "híbrida" é uma
+        # etiqueta de serviço/preço no Feegow (um pacote com um atendimento
+        # presencial e um online), não um link de agenda à parte: por isso
+        # ela usa o mesmo link presencial da primeira etapa. A reserva
+        # (sinal de 20%) e a confirmação do agendamento no Feegow acontecem
+        # depois, pelo webhook do Cal.com (ver
+        # ana_feegow.webhooks.feegow_sync_service.FeegowSyncService).
+        tipo_consulta = identificar_servico(mensagem)
         conv.update("tipo_consulta", tipo_consulta)
+        conv.next("finalizado")
 
-        horarios = consultar_horarios(
-            tipo_consulta,
-            mensagem,
-            mensagem,
+        link = (
+            link_consulta_online()
+            if tipo_consulta == "consulta_online"
+            else link_consulta_presencial()
         )
 
-        conv.update("horarios", horarios)
-
-        conv.next("aguardando_horario")
-
-        if horarios.get("content"):
-            return horarios
-
-        return "Informe o horário desejado (HH:MM)."
-
-    if conv.state == "aguardando_horario":
-        conv.update("horario", mensagem)
-
-        paciente = identificar_paciente(telefone)
-
-        if not paciente["existe"]:
-            conv.next("cadastro_nome")
-            return (
-                "Não encontrei seu cadastro.\n\n"
-                "Para continuar, informe seu nome completo."
-            )
-
-        return _confirmar_agendamento(
-            conv=conv,
-            paciente_id=paciente["paciente"]["patient_id"],
-            horario=mensagem,
+        return (
+            "Você pode escolher o melhor dia e horário direto por este "
+            "link:\n\n"
+            f"{link}\n\n"
+            "Para reservar o horário é cobrado um sinal de 20% do valor da "
+            "consulta - esse valor garante sua reserva, e a diferença é "
+            "paga somente depois da consulta."
         )
 
-    # Cadastro de paciente nova - só é alcançado quando a busca em
-    # "aguardando_horario" não encontrou a paciente pelo telefone. Antes
-    # desta correção, não havia handler para "cadastro_nome" (nem para os
-    # estados seguintes): a resposta pedia o nome, mas a próxima mensagem
-    # da paciente caía direto no "Não consegui entender." final, e o
-    # cadastro nunca era concluído.
-    if conv.state == "cadastro_nome":
-        conv.update("nome", mensagem)
-        conv.next("cadastro_cpf")
-        return "Obrigada! Agora, por favor, informe seu CPF."
-
-    if conv.state == "cadastro_cpf":
-        conv.update("cpf", mensagem)
-        conv.next("cadastro_nascimento")
-        return "Perfeito. Qual sua data de nascimento? (dd/mm/aaaa)"
-
-    if conv.state == "cadastro_nascimento":
-        conv.update("nascimento", mensagem.replace("/", "-"))
-
-        try:
-            resultado_cadastro = criar_paciente(
-                nome=conv.data["nome"],
-                cpf=conv.data["cpf"],
-                nascimento=conv.data["nascimento"],
-                celular=telefone,
-            )
-        except Exception:
-            conv.next("finalizado")
+    if conv.state == "aguardando_modalidade_retorno":
+        conv.next("finalizado")
+        msg = mensagem.lower()
+        if any(x in msg for x in ["online", "video", "vídeo", "teleconsulta"]):
             return (
-                "Não consegui concluir seu cadastro agora. Vou encaminhar "
-                "seu atendimento para nossa secretária humana."
+                "Perfeito! Você pode agendar seu retorno online sem custo "
+                "pelo link abaixo:\n\n"
+                f"{link_consulta_retorno_online()}"
             )
-
-        paciente_id = find_id(resultado_cadastro)
-
-        if not paciente_id:
-            conv.next("finalizado")
-            return (
-                "Seu cadastro foi enviado, mas não consegui confirmar o "
-                "número gerado. Vou encaminhar seu atendimento para nossa "
-                "secretária humana para concluir o agendamento."
-            )
-
-        return _confirmar_agendamento(
-            conv=conv,
-            paciente_id=paciente_id,
-            horario=conv.data["horario"],
+        return (
+            "Perfeito! Você pode agendar seu retorno presencial sem custo "
+            "pelo link abaixo:\n\n"
+            f"{link_consulta_retorno()}"
         )
 
     return "Não consegui entender."
-
-
-def _confirmar_agendamento(conv: Conversation, paciente_id, horario: str) -> str:
-    try:
-        resultado = agendar_consulta(
-            paciente_id=paciente_id,
-            tipo_consulta=conv.data["tipo_consulta"],
-            data=conv.data["data"],
-            horario=horario + ":00",
-            notas="Agendado pela ANA",
-        )
-
-        conv.next("finalizado")
-
-        agendamento_id = find_id(resultado)
-
-        return (
-            f"Consulta agendada com sucesso!\n"
-            f"ID: {agendamento_id}"
-        )
-
-    except Exception as e:
-
-        erro = str(e)
-
-        if "409" in erro:
-            conv.next("aguardando_horario")
-            return (
-                "Esse horário não está mais disponível. "
-                "Escolha outro horário, por favor."
-            )
-
-        raise
