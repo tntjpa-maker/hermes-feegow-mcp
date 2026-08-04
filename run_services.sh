@@ -24,7 +24,18 @@ uv run uvicorn ana_feegow.webhooks.app:app \
 WEBHOOK_PID=$!
 
 if [ "${HERMES_START_GATEWAY:-0}" = "1" ]; then
-    hermes gateway run &
+    (
+        set +e
+        trap 'kill -TERM "$child" 2>/dev/null; exit 0' TERM INT
+        while true; do
+            hermes gateway run &
+            child=$!
+            wait "$child"
+            code=$?
+            echo "[run_services] gateway exited (code=$code), restarting in 3s..." >&2
+            sleep 3
+        done
+    ) &
     GATEWAY_PID=$!
 fi
 
