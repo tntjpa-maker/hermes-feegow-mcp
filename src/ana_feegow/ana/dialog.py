@@ -11,6 +11,34 @@ from ana_feegow.services.retorno_service import (
     verificar_elegibilidade_retorno,
 )
 
+import os
+import requests
+
+EQUIPE_CHAT_ID = "5521964577547@s.whatsapp.net"
+WHATSAPP_BRIDGE_URL = os.environ.get("WHATSAPP_BRIDGE_URL", "http://127.0.0.1:3000")
+
+
+def notificar_equipe(telefone: str, mensagem: str, motivo: str) -> None:
+    """Avisa a equipe humana via WhatsApp quando a ANA nao tem resposta
+    pronta na base de conhecimento, ou quando a paciente pede atendimento
+    humano diretamente. Falha silenciosamente para nao travar o
+    atendimento da paciente caso o aviso nao seja entregue."""
+    try:
+        requests.post(
+            f"{WHATSAPP_BRIDGE_URL}/send",
+            json={
+                "chatId": EQUIPE_CHAT_ID,
+                "message": (
+                    f"[ANA] {motivo}\n"
+                    f"Paciente: {telefone}\n"
+                    f"Mensagem: {mensagem}"
+                ),
+            },
+            timeout=5,
+        )
+    except Exception:
+        pass
+
 
 def responder(telefone: str, mensagem: str):
 
@@ -18,6 +46,15 @@ def responder(telefone: str, mensagem: str):
 
     acao = decidir(mensagem)
     intencao = acao.get("intencao")
+
+    if acao.get("acao") == "HUMANO" or intencao == "informacao":
+        notificar_equipe(
+            telefone,
+            mensagem,
+            "Pediu atendimento humano"
+            if acao.get("acao") == "HUMANO"
+            else "Pergunta fora da base de conhecimento oficial",
+        )
 
     # Perguntas informativas (preço, endereço, convênio, explicação sobre
     # os tipos de consulta) são respondidas diretamente, sem depender do

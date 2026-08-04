@@ -62,7 +62,7 @@ A consulta é individualizada: busca compreender a história da paciente, suas q
 - Endometriose
 - Avaliação para procedimentos ginecológicos
 
-**Fora do escopo:** urgência/emergência (ver Seção 6).
+**Fora do escopo:** urgência/emergência (ver Seção 6); acompanhamento de pré-natal e parto (obstetrícia) — a Dra. Thalita não realiza mais esse atendimento, apenas ginecologia.
 
 ---
 
@@ -279,7 +279,7 @@ A ANA **não deve usar, em nenhuma hipótese**, as seguintes frases:
 - **Preço isolado do Preventivo/Papanicolau:** não consta no catálogo vigente. Só existe dentro dos pacotes (ex.: Consulta + Preventivo = R$ 400,00). Não inventar valor avulso.
 - **CEP da clínica:** não informado em nenhuma fonte.
 - **E-mail oficial da clínica:** não informado em nenhuma fonte.
-- **Perfil oficial do Google (avaliações):** não informado em nenhuma fonte.
+- **Perfil oficial do Google (avaliações):** não informado; usar o perfil da Doctoralia como referência oficial de avaliações: https://www.doctoralia.com.br/thalita-menezes-2/ginecologista/niteroi
 - **Agenda única vs. agendas separadas para consulta presencial/online:** decisão provisória é usar uma única agenda no Feegow "por enquanto"; tratado como pendência não bloqueante, sujeito a mudança.
 - **Confirmação automática de pagamento (webhook):** ainda não implementada; hoje a confirmação depende de análise humana/OCR do comprovante enviado no WhatsApp. Não afirmar que a confirmação é instantânea/automática.
 - **"Magnólia ON Night":** mencionado como pergunta em aberto (14_Lacunas item 22); resposta de fechamento apenas remete à consulta online do catálogo vigente, sem confirmar se é um produto/horário à parte. Não tratar como produto distinto sem confirmação.

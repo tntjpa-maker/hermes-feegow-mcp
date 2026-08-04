@@ -21,6 +21,17 @@ RESPOSTAS = {
         "sua operadora ofereça essa possibilidade."
     ),
 
+    "avaliacoes": (
+        "Você pode ver as avaliações da Dra. Thalita no perfil dela na "
+        "Doctoralia: https://www.doctoralia.com.br/thalita-menezes-2/ginecologista/niteroi"
+    ),
+
+    "obstetricia": (
+        "A Dra. Thalita não realiza mais acompanhamento de pré-natal e "
+        "parto (obstetrícia) — atende apenas ginecologia. Se quiser, "
+        "posso te ajudar a agendar uma consulta ginecológica."
+    ),
+
     "consulta_presencial_info": (
         "A consulta presencial acontece no consultório, na Clínica "
         "Magnólia, com a Dra. Thalita. Custa R$ 350,00 e já inclui um "

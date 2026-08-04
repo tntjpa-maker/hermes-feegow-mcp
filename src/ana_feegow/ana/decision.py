@@ -73,6 +73,36 @@ def decidir(mensagem: str) -> dict:
             "intencao": "convenio",
         }
 
+    if any(x in msg for x in [
+        "avaliações",
+        "avaliacoes",
+        "avaliação da dra",
+        "avaliacao da dra",
+        "reviews",
+        "doctoralia",
+        "estrelas",
+        "nota no google",
+    ]):
+        return {
+            "acao": "RESPONDER",
+            "intencao": "avaliacoes",
+        }
+
+    if any(x in msg for x in [
+        "pre-natal",
+        "pré-natal",
+        "prenatal",
+        "pre natal",
+        "pré natal",
+        "obstetricia",
+        "obstetrícia",
+        "parto",
+    ]):
+        return {
+            "acao": "RESPONDER",
+            "intencao": "obstetricia",
+        }
+
     # Perguntas explicativas ("o que é", "como funciona") sobre um tipo de
     # consulta são informativas, não um pedido de agendamento - precisam ser
     # checadas antes do gatilho genérico de "consulta"/"agendar"/"marcar"
