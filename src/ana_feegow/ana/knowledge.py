@@ -21,4 +21,23 @@ RESPOSTAS = {
         "sua operadora ofereça essa possibilidade."
     ),
 
+    "consulta_presencial_info": (
+        "A consulta presencial acontece no consultório, na Clínica "
+        "Magnólia, com a Dra. Thalita. Custa R$ 350,00 e já inclui um "
+        "retorno em até 30 dias."
+    ),
+
+    "consulta_online_info": (
+        "A consulta online é feita por videochamada, com a Dra. Thalita. "
+        "Custa R$ 250,00 e já inclui um retorno online em até 30 dias."
+    ),
+
+    "consulta_hibrida_info": (
+        "A consulta híbrida combina um atendimento presencial e um "
+        "atendimento online com a Dra. Thalita, por R$ 350,00. Não é um "
+        "tipo de agenda separado: é um pacote com dois encontros, e cada "
+        "um é agendado no link correspondente (presencial ou online), "
+        "conforme a organização do seu acompanhamento."
+    ),
+
 }

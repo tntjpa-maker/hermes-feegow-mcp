@@ -15,7 +15,12 @@ def test_pergunta_informativa_na_primeira_mensagem_responde_e_convida_a_agendar(
     resposta = dialog_module.responder(telefone, "Oi, boa tarde! Queria saber onde fica a clinica.")
 
     assert "Av. Sete de Setembro" in resposta
-    assert "primeira consulta ou retorno" in resposta.lower()
+    assert "posso te ajudar a agendar" in resposta.lower()
+    # A pergunta fixa "primeira consulta ou retorno" logo após uma resposta
+    # informativa soava como um menu de atendimento automático - a ANA não
+    # deve mais emendar essa pergunta (ver dialog.responder, estado
+    # "inicio", e SOUL.md seções 1 e 5).
+    assert "primeira consulta ou retorno" not in resposta.lower()
 
     conv = conversation_module.Conversation(telefone)
     assert conv.state == "aguardando_motivo"
@@ -27,18 +32,19 @@ def test_pergunta_de_preco_nao_derruba_agendamento_em_andamento(monkeypatch, tmp
     telefone = "21988880002"
 
     dialog_module.responder(telefone, "oi")  # inicio -> aguardando_motivo
-    dialog_module.responder(telefone, "primeira consulta")  # -> aguardando_data
 
     conv_antes = conversation_module.Conversation(telefone)
-    assert conv_antes.state == "aguardando_data"
+    assert conv_antes.state == "aguardando_motivo"
 
     resposta = dialog_module.responder(telefone, "quanto custa a consulta?")
 
     assert "R$ 350,00" in resposta
 
     conv_depois = conversation_module.Conversation(telefone)
-    assert conv_depois.state == "aguardando_data"
-    assert conv_depois.data.get("data") is None
+    # Uma pergunta informativa no meio do fluxo não altera o estado - a
+    # próxima mensagem da paciente ainda é tratada normalmente como o
+    # motivo da consulta (primeira consulta ou retorno).
+    assert conv_depois.state == "aguardando_motivo"
 
 
 def test_pergunta_de_convenio_nao_e_confundida_com_pedido_de_agendamento(monkeypatch, tmp_path):
@@ -55,92 +61,85 @@ def test_pergunta_de_convenio_nao_e_confundida_com_pedido_de_agendamento(monkeyp
     assert conv.state == "aguardando_motivo"
 
 
-def test_cadastro_de_paciente_nova_completa_e_agenda(monkeypatch, tmp_path):
+def test_pergunta_sobre_consulta_hibrida_e_respondida_como_faq(monkeypatch, tmp_path):
+    _isolar_conversas(monkeypatch, tmp_path)
+
+    telefone = "21988880007"
+    resposta = dialog_module.responder(telefone, "oi, o que é a consulta híbrida?")
+
+    assert "presencial" in resposta.lower()
+    assert "online" in resposta.lower()
+    # Pergunta explicativa não deve ser confundida com pedido de
+    # agendamento (ver decision.py: bloco "o que é" / "como funciona").
+    assert "sinal de 20%" not in resposta.lower()
+
+
+def test_consulta_presencial_nova_envia_link_presencial_e_explica_sinal(monkeypatch, tmp_path):
     _isolar_conversas(monkeypatch, tmp_path)
 
     monkeypatch.setattr(
         dialog_module,
-        "consultar_horarios",
-        lambda tipo, data, _data2: {"content": []},
-    )
-    monkeypatch.setattr(
-        dialog_module,
-        "identificar_paciente",
-        lambda telefone: {"existe": False, "paciente": None},
-    )
-    monkeypatch.setattr(
-        dialog_module,
-        "criar_paciente",
-        lambda nome, cpf, nascimento, celular: {"content": {"patient_id": 999}},
-    )
-    monkeypatch.setattr(
-        dialog_module,
-        "agendar_consulta",
-        lambda **kwargs: {"content": {"agendamento_id": 4242}},
+        "link_consulta_presencial",
+        lambda: "https://cal.magnoliasdm.com.br/drathalita/niteroi",
     )
 
     telefone = "21988880004"
 
     dialog_module.responder(telefone, "oi")  # inicio -> aguardando_motivo
-    dialog_module.responder(telefone, "primeira consulta")  # -> aguardando_data
-    dialog_module.responder(telefone, "20/08/2026")  # -> aguardando_horario
-    resposta = dialog_module.responder(telefone, "14:00")  # -> cadastro_nome
+    resposta = dialog_module.responder(telefone, "quero marcar minha primeira consulta")
 
-    assert "nome completo" in resposta.lower()
-    conv = conversation_module.Conversation(telefone)
-    assert conv.state == "cadastro_nome"
-
-    resposta = dialog_module.responder(telefone, "Maria da Silva")
-    assert "cpf" in resposta.lower()
-    conv = conversation_module.Conversation(telefone)
-    assert conv.state == "cadastro_cpf"
-
-    resposta = dialog_module.responder(telefone, "11122233344")
-    assert "nascimento" in resposta.lower()
-    conv = conversation_module.Conversation(telefone)
-    assert conv.state == "cadastro_nascimento"
-
-    resposta = dialog_module.responder(telefone, "01/01/1990")
-
-    assert "agendada com sucesso" in resposta.lower()
-    assert "4242" in resposta
+    assert "https://cal.magnoliasdm.com.br/drathalita/niteroi" in resposta
+    assert "sinal de 20%" in resposta.lower()
+    # A ANA nunca pergunta data nem horário - ela só envia o link do
+    # Cal.com para a paciente escolher por conta própria.
+    assert "que dia" not in resposta.lower()
+    assert "que horário" not in resposta.lower()
+    assert "qual horário" not in resposta.lower()
 
     conv = conversation_module.Conversation(telefone)
     assert conv.state == "finalizado"
+    assert conv.data.get("tipo_consulta") == "consulta_presencial"
 
 
-def test_cadastro_com_falha_na_criacao_encaminha_para_humano_sem_quebrar(
-    monkeypatch, tmp_path
-):
+def test_consulta_online_nova_envia_link_online(monkeypatch, tmp_path):
     _isolar_conversas(monkeypatch, tmp_path)
 
     monkeypatch.setattr(
         dialog_module,
-        "consultar_horarios",
-        lambda tipo, data, _data2: {"content": []},
+        "link_consulta_online",
+        lambda: "https://cal.magnoliasdm.com.br/drathalita/online",
     )
-    monkeypatch.setattr(
-        dialog_module,
-        "identificar_paciente",
-        lambda telefone: {"existe": False, "paciente": None},
-    )
-
-    def _falha(*args, **kwargs):
-        raise RuntimeError("Feegow indisponível")
-
-    monkeypatch.setattr(dialog_module, "criar_paciente", _falha)
 
     telefone = "21988880005"
 
     dialog_module.responder(telefone, "oi")
-    dialog_module.responder(telefone, "primeira consulta")
-    dialog_module.responder(telefone, "20/08/2026")
-    dialog_module.responder(telefone, "14:00")
-    dialog_module.responder(telefone, "Maria da Silva")
-    dialog_module.responder(telefone, "11122233344")
-    resposta = dialog_module.responder(telefone, "01/01/1990")
+    resposta = dialog_module.responder(telefone, "quero uma consulta online, primeira vez")
 
-    assert "secretária" in resposta.lower() or "secretaria" in resposta.lower()
+    assert "https://cal.magnoliasdm.com.br/drathalita/online" in resposta
 
     conv = conversation_module.Conversation(telefone)
     assert conv.state == "finalizado"
+    assert conv.data.get("tipo_consulta") == "consulta_online"
+
+
+def test_consulta_hibrida_nova_usa_link_presencial(monkeypatch, tmp_path):
+    _isolar_conversas(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        dialog_module,
+        "link_consulta_presencial",
+        lambda: "https://cal.magnoliasdm.com.br/drathalita/niteroi",
+    )
+
+    telefone = "21988880006"
+
+    dialog_module.responder(telefone, "oi")
+    resposta = dialog_module.responder(telefone, "quero a consulta hibrida, primeira vez")
+
+    # Híbrida não tem link de agenda próprio - é uma etiqueta de
+    # serviço/preço no Feegow (pacote presencial + online), então usa o
+    # mesmo link presencial.
+    assert "https://cal.magnoliasdm.com.br/drathalita/niteroi" in resposta
+
+    conv = conversation_module.Conversation(telefone)
+    assert conv.data.get("tipo_consulta") == "consulta_hibrida"

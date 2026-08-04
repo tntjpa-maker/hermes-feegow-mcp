@@ -73,6 +73,37 @@ def decidir(mensagem: str) -> dict:
             "intencao": "convenio",
         }
 
+    # Perguntas explicativas ("o que é", "como funciona") sobre um tipo de
+    # consulta são informativas, não um pedido de agendamento - precisam ser
+    # checadas antes do gatilho genérico de "consulta"/"agendar"/"marcar"
+    # logo abaixo, senão "o que é a consulta híbrida?" cairia classificada
+    # como AGENDAR só por conter a palavra "consulta".
+    if any(x in msg for x in [
+        "o que é",
+        "o que e",
+        "como funciona",
+        "como é",
+        "como e",
+        "o que significa",
+    ]):
+        if any(x in msg for x in ["híbrida", "hibrida"]):
+            return {
+                "acao": "RESPONDER",
+                "intencao": "consulta_hibrida_info",
+            }
+
+        if any(x in msg for x in ["online", "vídeo", "video", "teleconsulta"]):
+            return {
+                "acao": "RESPONDER",
+                "intencao": "consulta_online_info",
+            }
+
+        if "presencial" in msg:
+            return {
+                "acao": "RESPONDER",
+                "intencao": "consulta_presencial_info",
+            }
+
     if any(x in msg for x in [
         "consulta",
         "agendar",
