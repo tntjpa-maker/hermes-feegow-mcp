@@ -14,7 +14,10 @@ from ana_feegow.services.retorno_service import (
 import os
 import requests
 
-EQUIPE_CHAT_ID = "5521964577547@s.whatsapp.net"
+EQUIPE_CHAT_IDS = [
+    "5521964577547@s.whatsapp.net",
+    "5521985929056@s.whatsapp.net",
+]
 WHATSAPP_BRIDGE_URL = os.environ.get("WHATSAPP_BRIDGE_URL", "http://127.0.0.1:3000")
 
 
@@ -23,21 +26,22 @@ def notificar_equipe(telefone: str, mensagem: str, motivo: str) -> None:
     pronta na base de conhecimento, ou quando a paciente pede atendimento
     humano diretamente. Falha silenciosamente para nao travar o
     atendimento da paciente caso o aviso nao seja entregue."""
-    try:
-        requests.post(
-            f"{WHATSAPP_BRIDGE_URL}/send",
-            json={
-                "chatId": EQUIPE_CHAT_ID,
-                "message": (
-                    f"[ANA] {motivo}\n"
-                    f"Paciente: {telefone}\n"
-                    f"Mensagem: {mensagem}"
-                ),
-            },
-            timeout=5,
-        )
-    except Exception:
-        pass
+    for chat_id in EQUIPE_CHAT_IDS:
+        try:
+            requests.post(
+                f"{WHATSAPP_BRIDGE_URL}/send",
+                json={
+                    "chatId": chat_id,
+                    "message": (
+                        f"[ANA] {motivo}\n"
+                        f"Paciente: {telefone}\n"
+                        f"Mensagem: {mensagem}"
+                    ),
+                },
+                timeout=5,
+            )
+        except Exception:
+            pass
 
 
 def responder(telefone: str, mensagem: str):
