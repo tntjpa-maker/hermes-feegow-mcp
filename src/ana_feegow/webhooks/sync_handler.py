@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 from ana_feegow.webhooks.cal_parser import parse_booking
 from ana_feegow.services import twenty_service
@@ -37,7 +38,16 @@ class SyncHandler:
             checkout.checkout_id,
             checkout.payment_url,
         )
-        twenty_service.registrar_reserva_aguardando_pagamento(booking.opportunity_id)
+        # Prazo de pagamento: mesma janela de 30min usada pela varredura de
+        # expiracao (RESERVA_EXPIRA_MINUTOS_PADRAO em app.py). Alimenta o
+        # checkpoint de recuperacao "reserva pendente" (dispara a
+        # paymentDeadlineAt - 10min, ou seja, ~20min apos a reserva ser criada).
+        payment_deadline_at = (
+            datetime.now(timezone.utc) + timedelta(minutes=30)
+        ).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        twenty_service.registrar_reserva_aguardando_pagamento(
+            booking.opportunity_id, payment_deadline_at
+        )
         return checkout
 
     def _cancelar_reserva_com_dados_invalidos(self, uid, exc):

@@ -150,3 +150,45 @@ def decidir(mensagem: str) -> dict:
         "acao": "RESPONDER",
         "intencao": "informacao",
     }
+
+
+
+def inferir_temperatura(mensagem: str, decisao: dict) -> str:
+    """Infere a 'temperatura' do lead (Quente/Morno/Frio) a partir da
+    mensagem atual e da decisao (acao/intencao) ja calculada por decidir()
+    para essa mesma mensagem - reaproveitando o resultado em vez de fazer uma
+    segunda classificacao. Nao ha chamada de LLM neste projeto (decidir() e
+    puramente baseado em palavras-chave), entao esta e uma heuristica no
+    mesmo espirito: um sinal simples para priorizacao humana no funil de
+    recuperacao, nao uma verdade absoluta."""
+    msg = mensagem.lower()
+    acao = decisao.get("acao")
+
+    sinais_frios = (
+        "nao tenho interesse",
+        "so queria saber",
+        "so estou pesquisando",
+        "depois eu vejo",
+        "vou pensar",
+        "nao quero",
+        "desisti",
+        "nao e mais necessario",
+    )
+    if any(s in msg for s in sinais_frios):
+        return "FRIO"
+
+    if acao == "AGENDAR":
+        return "QUENTE"
+
+    sinais_quentes = (
+        "hoje",
+        "amanha",
+        "urgente",
+        "o quanto antes",
+        "assim que possivel",
+        "pode ser agora",
+    )
+    if any(s in msg for s in sinais_quentes):
+        return "QUENTE"
+
+    return "MORNO"

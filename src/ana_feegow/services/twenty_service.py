@@ -249,13 +249,28 @@ def registrar_link_enviado(opportunity_id: str, person_id: str = None):
         logger.exception("Falha no Fluxo 3 (Twenty) para opportunity_id=%s", opportunity_id)
 
 
+# Motivos de perda: as 5 chaves originais (usadas em producao por
+# expiracao.py e sync_handler.py) foram mantidas intactas e as 8 novas
+# categorias do documento estrategico da clinica foram adicionadas ao final.
 LOSS_REASONS_VALIDOS = (
     "PAGAMENTO_EXPIRADO",
     "CANCELAMENTO_PACIENTE",
     "SEM_RESPOSTA",
     "HORARIO_INDISPONIVEL",
     "OUTRO",
+    "PRECO",
+    "FORMA_DE_PAGAMENTO",
+    "NAO_ESTA_PRONTA_PARA_INICIAR",
+    "DECIDIU_POR_OUTRO_PROFISSIONAL",
+    "DISTANCIA_LOCALIZACAO",
+    "DIFICULDADE_TECNICA",
+    "CONTATO_DUPLICADO",
+    "ATENDIMENTO_INADEQUADO",
 )
+
+TEMPERATURA_VALIDOS = ("QUENTE", "MORNO", "FRIO")
+
+ORIGEM_LEAD_VALIDOS = ("INSTAGRAM", "INDICACAO", "GOOGLE", "OUTRO")
 
 
 
@@ -366,19 +381,186 @@ def registrar_atendimento_realizado(opportunity_id: str) -> None:
 
 def registrar_perdido(opportunity_id: str, loss_reason: str = "OUTRO") -> None:
     """Estagio 'Perdido': marcado quando a reserva e cancelada pela paciente
-    ou o pagamento expira sem confirmacao. Best effort - qualquer falha e
-    apenas logada, nunca levanta."""
+    ou o pagamento expira sem confirmacao (ou qualquer outro caminho que
+    leve a oportunidade a ser perdida - esta e a unica funcao que muda o
+    stage para PERDIDO). Antes do PATCH, busca o stage atual da oportunidade
+    e grava em 'ondeParou' (Onde parou) para permitir reconstruir de qual
+    estagio o lead saiu do funil. Best effort - qualquer falha e apenas
+    logada, nunca levanta."""
     if not _configurado() or not opportunity_id:
         return
     if loss_reason not in LOSS_REASONS_VALIDOS:
         loss_reason = "OUTRO"
     try:
-        _patch(
-            f"/rest/opportunities/{opportunity_id}",
-            {"stage": "PERDIDO", "lossReason": loss_reason},
-        )
+        payload = {"stage": "PERDIDO", "lossReason": loss_reason}
+        try:
+            atual = _get(f"/rest/opportunities/{opportunity_id}")
+            estagio_atual = (atual.get("data", {}).get("opportunity", {}) or {}).get(
+                "stage"
+            )
+            if estagio_atual and estagio_atual != "PERDIDO":
+                payload["ondeParou"] = estagio_atual
+        except Exception:
+            logger.exception(
+                "Falha ao buscar stage atual antes de marcar perdido (Twenty) "
+                "para opportunity_id=%s",
+                opportunity_id,
+            )
+        _patch(f"/rest/opportunities/{opportunity_id}", payload)
     except Exception:
         logger.exception(
             "Falha ao registrar perdido (Twenty) para opportunity_id=%s",
+            opportunity_id,
+        )
+
+
+
+def registrar_temperatura(opportunity_id: str, temperatura: str) -> None:
+    """Grava a temperatura do lead (Quente/Morno/Frio), inferida pela Ana a
+    partir do interesse demonstrado na conversa. Best effort - qualquer falha
+    e apenas logada, nunca levanta e nunca interrompe o atendimento."""
+    if not _configurado() or not opportunity_id:
+        return
+    if temperatura not in TEMPERATURA_VALIDOS:
+        return
+    try:
+        _patch(f"/rest/opportunities/{opportunity_id}", {"temperatura": temperatura})
+    except Exception:
+        logger.exception(
+            "Falha ao registrar temperatura (Twenty) para opportunity_id=%s",
+            opportunity_id,
+        )
+
+
+def registrar_origem_lead(opportunity_id: str, origem: str) -> None:
+    """Grava a origem do lead (Instagram/Indicacao/Google/Outro), classificada
+    a partir da resposta da paciente a pergunta 'como conheceu a Dra.
+    Thalita'. Best effort - qualquer falha e apenas logada, nunca levanta."""
+    if not _configurado() or not opportunity_id:
+        return
+    if origem not in ORIGEM_LEAD_VALIDOS:
+        origem = "OUTRO"
+    try:
+        _patch(f"/rest/opportunities/{opportunity_id}", {"origemDoLead": origem})
+    except Exception:
+        logger.exception(
+            "Falha ao registrar origem do lead (Twenty) para opportunity_id=%s",
+            opportunity_id,
+        )
+
+
+
+def listar_oportunidades_link_enviado_para_followup(minutos: int = 60):
+    """Varre oportunidades no estagio 'Link de agendamento enviado' cujo
+    linkSentAt ja passou de `minutos` e que ainda nao tem uma task de
+    follow-up criada (campo followUpCriadoEm vazio). Retorna lista vazia se
+    a integracao nao estiver disponivel ou a chamada falhar."""
+    if not _configurado():
+        return []
+    try:
+        data = _get(
+            "/rest/opportunities",
+            {
+                "filter": "stage[eq]:LINK_DE_AGENDAMENTO_ENVIADO",
+                "limit": 200,
+            },
+        )
+        registros = data.get("data", {}).get("opportunities", []) or []
+        limite = datetime.now(timezone.utc) - timedelta(minutes=minutos)
+        elegiveis = []
+        for oportunidade in registros:
+            if oportunidade.get("followUpCriadoEm"):
+                continue
+            link_sent_raw = oportunidade.get("linkSentAt")
+            if not link_sent_raw:
+                continue
+            try:
+                link_sent_dt = datetime.fromisoformat(
+                    str(link_sent_raw).replace("Z", "+00:00")
+                )
+            except ValueError:
+                continue
+            if link_sent_dt <= limite:
+                elegiveis.append(oportunidade)
+        return elegiveis
+    except Exception:
+        logger.exception(
+            "Falha ao listar oportunidades (link enviado) para follow-up (Twenty)"
+        )
+        return []
+
+
+def listar_oportunidades_reserva_pendente_para_followup(minutos_antes_expirar: int = 10):
+    """Varre oportunidades no estagio 'Reserva aguardando pagamento' cujo
+    paymentDeadlineAt esta a `minutos_antes_expirar` minutos (ou menos) de
+    expirar - ou seja, ja passou tempo suficiente dentro da janela de
+    pagamento de 30min (ver RESERVA_EXPIRA_MINUTOS_PADRAO em app.py) - e que
+    ainda nao tem uma task de follow-up criada. Oportunidades sem
+    paymentDeadlineAt preenchido (registros antigos, anteriores a esta fase)
+    sao ignoradas. Retorna lista vazia se a integracao nao estiver disponivel
+    ou a chamada falhar."""
+    if not _configurado():
+        return []
+    try:
+        data = _get(
+            "/rest/opportunities",
+            {
+                "filter": "stage[eq]:RESERVA_AGUARDANDO_PAGAMENTO",
+                "limit": 200,
+            },
+        )
+        registros = data.get("data", {}).get("opportunities", []) or []
+        agora = datetime.now(timezone.utc)
+        elegiveis = []
+        for oportunidade in registros:
+            if oportunidade.get("followUpReservaCriadoEm"):
+                continue
+            deadline_raw = oportunidade.get("paymentDeadlineAt")
+            if not deadline_raw:
+                continue
+            try:
+                deadline_dt = datetime.fromisoformat(
+                    str(deadline_raw).replace("Z", "+00:00")
+                )
+            except ValueError:
+                continue
+            checkpoint = deadline_dt - timedelta(minutes=minutos_antes_expirar)
+            if agora >= checkpoint:
+                elegiveis.append(oportunidade)
+        return elegiveis
+    except Exception:
+        logger.exception(
+            "Falha ao listar oportunidades (reserva pendente) para follow-up (Twenty)"
+        )
+        return []
+
+
+def criar_task_followup(opportunity_id: str, titulo: str, corpo: str = None, campo_controle: str = "followUpCriadoEm") -> None:
+    """Cria uma Task no Twenty vinculada a oportunidade (via taskTargets) e
+    marca followUpCriadoEm com o horario atual, para que a mesma oportunidade
+    nao gere uma nova task a cada nova varredura dos checkpoints de
+    recuperacao. Nao envia nenhuma mensagem para a paciente - e apenas uma
+    tarefa manual para a equipe humana. Best effort - qualquer falha e apenas
+    logada, nunca levanta."""
+    if not _configurado() or not opportunity_id:
+        return
+    try:
+        payload = {"title": titulo, "status": "TODO"}
+        if corpo:
+            payload["bodyV2"] = {"markdown": corpo}
+        tarefa = _post("/rest/tasks", payload)
+        task_id = tarefa.get("data", {}).get("createTask", {}).get("id")
+        if task_id:
+            _post(
+                "/rest/taskTargets",
+                {"taskId": task_id, "targetOpportunityId": opportunity_id},
+            )
+        _patch(
+            f"/rest/opportunities/{opportunity_id}",
+            {campo_controle: _agora_iso()},
+        )
+    except Exception:
+        logger.exception(
+            "Falha ao criar task de follow-up (Twenty) para opportunity_id=%s",
             opportunity_id,
         )

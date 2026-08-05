@@ -63,3 +63,67 @@ def concluir_atendimentos_realizados(buffer_horas: int = 2):
         twenty_service.registrar_atendimento_realizado(opportunity_id)
         processadas.append({"opportunity_id": opportunity_id, "status": "concluido"})
     return processadas
+
+
+
+def checkpoint_link_enviado(minutos: int = 60):
+    """Checkpoint de recuperacao 'Link enviado': varre oportunidades no
+    estagio 'Link de agendamento enviado' paradas ha mais de `minutos` e cria
+    uma Task de follow-up manual no Twenty para cada uma que ainda nao tem
+    follow-up registrado (evita duplicar a mesma task a cada varredura). Nao
+    envia nenhuma mensagem para a paciente - apenas cria a task para a equipe
+    humana agir manualmente. Retorna a lista do que foi processado, para log.
+    """
+    processadas = []
+    for oportunidade in twenty_service.listar_oportunidades_link_enviado_para_followup(
+        minutos
+    ):
+        opportunity_id = oportunidade.get("id")
+        if not opportunity_id:
+            continue
+        servico = oportunidade.get("serviceOfInterest") or "consulta"
+        titulo = (
+            f"Follow-up manual: {servico} parado ha {minutos}min em "
+            "Link de agendamento enviado"
+        )
+        twenty_service.criar_task_followup(
+            opportunity_id,
+            titulo,
+            "Lead recebeu o link de agendamento e ainda nao reservou um "
+            "horario. Considere um contato manual para recuperar o "
+            "atendimento.",
+        )
+        processadas.append({"opportunity_id": opportunity_id, "status": "followup_criado"})
+    return processadas
+
+
+def checkpoint_reserva_pendente(minutos_antes_expirar: int = 10):
+    """Checkpoint de recuperacao 'Reserva pendente': varre oportunidades no
+    estagio 'Reserva aguardando pagamento' cujo prazo de pagamento esta a
+    `minutos_antes_expirar` minutos (ou menos) de expirar e cria uma Task de
+    follow-up manual no Twenty para cada uma que ainda nao tem follow-up
+    registrado. Nao envia nenhuma mensagem para a paciente. Retorna a lista do
+    que foi processado, para log.
+    """
+    processadas = []
+    for oportunidade in twenty_service.listar_oportunidades_reserva_pendente_para_followup(
+        minutos_antes_expirar
+    ):
+        opportunity_id = oportunidade.get("id")
+        if not opportunity_id:
+            continue
+        servico = oportunidade.get("serviceOfInterest") or "consulta"
+        titulo = (
+            f"Follow-up manual: {servico} com reserva aguardando pagamento "
+            "perto de expirar"
+        )
+        twenty_service.criar_task_followup(
+            opportunity_id,
+            titulo,
+            "Lead reservou um horario mas ainda nao concluiu o pagamento do "
+            "sinal. Considere um contato manual antes que a reserva expire "
+            "automaticamente.",
+            campo_controle="followUpReservaCriadoEm",
+        )
+        processadas.append({"opportunity_id": opportunity_id, "status": "followup_criado"})
+    return processadas

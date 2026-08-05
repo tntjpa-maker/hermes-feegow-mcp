@@ -1,5 +1,7 @@
+import logging
+
 from ana_feegow.ana.conversation import Conversation
-from ana_feegow.ana.decision import decidir
+from ana_feegow.ana.decision import decidir, inferir_temperatura
 from ana_feegow.ana.knowledge import RESPOSTAS
 from ana_feegow.errors import FeegowError
 from ana_feegow.ana.service import identificar_servico
@@ -20,6 +22,8 @@ EQUIPE_CHAT_IDS = [
     "5521985929056@s.whatsapp.net",
 ]
 WHATSAPP_BRIDGE_URL = os.environ.get("WHATSAPP_BRIDGE_URL", "http://127.0.0.1:3000")
+
+logger = logging.getLogger(__name__)
 
 
 def notificar_equipe(telefone: str, mensagem: str, motivo: str) -> None:
@@ -71,6 +75,21 @@ def _link_com_metadata_e_registro(conv, link_base: str) -> str:
     return twenty_service.montar_link_com_metadata(link_base, opportunity_id)
 
 
+def _classificar_origem_lead(mensagem: str) -> str:
+    """Classifica a origem do lead a partir de palavras-chave na resposta da
+    paciente a pergunta 'como conheceu a Dra. Thalita'. Matching simples de
+    palavras-chave e aceitavel nesta fase - o importante e o campo existir e
+    ser preenchido na maioria dos casos, nao a sofisticacao da deteccao."""
+    msg = mensagem.lower()
+    if "insta" in msg:
+        return "INSTAGRAM"
+    if "indic" in msg or "amiga" in msg:
+        return "INDICACAO"
+    if "google" in msg or "pesquisa" in msg:
+        return "GOOGLE"
+    return "OUTRO"
+
+
 def responder(telefone: str, mensagem: str):
 
     conv = Conversation(telefone)
@@ -79,6 +98,19 @@ def responder(telefone: str, mensagem: str):
     intencao = acao.get("intencao")
 
     _sincronizar_twenty(telefone, conv, intencao)
+
+    # Temperatura do lead (Quente/Morno/Frio): best effort, nunca deve
+    # interromper o atendimento da paciente se a chamada ao Twenty falhar.
+    opportunity_id = conv.data.get("twenty_opportunity_id")
+    if opportunity_id:
+        try:
+            temperatura = inferir_temperatura(mensagem, acao)
+            twenty_service.registrar_temperatura(opportunity_id, temperatura)
+        except Exception:
+            logger.exception(
+                "Falha ao registrar temperatura (best effort) para telefone=%s",
+                telefone,
+            )
 
     if acao.get("acao") == "HUMANO" or intencao == "informacao":
         notificar_equipe(
@@ -178,8 +210,30 @@ def responder(telefone: str, mensagem: str):
         # ana_feegow.webhooks.feegow_sync_service.FeegowSyncService).
         tipo_consulta = identificar_servico(mensagem)
         conv.update("tipo_consulta", tipo_consulta)
+        conv.next("aguardando_origem")
+        return (
+            "Antes de te mandar o link, como voc\u00ea conheceu a Dra. "
+            "Thalita? (Instagram, indica\u00e7\u00e3o, Google...)"
+        )
+
+    if conv.state == "aguardando_origem":
         conv.next("finalizado")
 
+        # Origem do lead: best effort, nunca deve interromper o
+        # atendimento da paciente se a chamada ao Twenty falhar.
+        origem = _classificar_origem_lead(mensagem)
+        opportunity_id = conv.data.get("twenty_opportunity_id")
+        if opportunity_id:
+            try:
+                twenty_service.registrar_origem_lead(opportunity_id, origem)
+            except Exception:
+                logger.exception(
+                    "Falha ao registrar origem do lead (best effort) para "
+                    "telefone=%s",
+                    telefone,
+                )
+
+        tipo_consulta = conv.data.get("tipo_consulta")
         link_base = (
             link_consulta_online()
             if tipo_consulta == "consulta_online"
@@ -188,11 +242,11 @@ def responder(telefone: str, mensagem: str):
         link = _link_com_metadata_e_registro(conv, link_base)
 
         return (
-            "Você pode escolher o melhor dia e horário direto por este "
+            "Voc\u00ea pode escolher o melhor dia e hor\u00e1rio direto por este "
             "link:\n\n"
             f"{link}\n\n"
-            "Para reservar o horário é cobrado um sinal de 20% do valor da "
-            "consulta - esse valor garante sua reserva, e a diferença é "
+            "Para reservar o hor\u00e1rio \u00e9 cobrado um sinal de 20% do valor da "
+            "consulta - esse valor garante sua reserva, e a diferen\u00e7a \u00e9 "
             "paga somente depois da consulta."
         )
 

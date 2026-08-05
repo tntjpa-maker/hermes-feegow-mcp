@@ -12,6 +12,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ana_feegow.webhooks.calcom_client import CalComClient
 from ana_feegow.webhooks.expiracao import (
+    checkpoint_link_enviado,
+    checkpoint_reserva_pendente,
     concluir_atendimentos_realizados,
     expirar_reservas_pendentes,
 )
@@ -103,6 +105,58 @@ async def _loop_atendimento_realizado():
                 logger.info("Varredura de atendimento realizado processou: %s", processadas)
         except Exception as exc:  # noqa: BLE001 - o loop de fundo nao pode morrer
             logger.error("Falha inesperada na varredura de atendimento realizado: %s", exc)
+        await asyncio.sleep(intervalo)
+
+
+
+async def _loop_checkpoint_link_enviado():
+    intervalo = 1800
+    minutos = 60
+    logger.info(
+        "Checkpoint de recuperacao \'link enviado\' ativado: checagem a cada "
+        "%ss (limite de %smin parado no estagio).",
+        intervalo,
+        minutos,
+    )
+
+    while True:
+        try:
+            processadas = await asyncio.to_thread(checkpoint_link_enviado, minutos)
+            if processadas:
+                logger.info(
+                    "Checkpoint \'link enviado\' processou: %s", processadas
+                )
+        except Exception as exc:  # noqa: BLE001 - o loop de fundo nao pode morrer
+            logger.error("Falha inesperada no checkpoint \'link enviado\': %s", exc)
+        await asyncio.sleep(intervalo)
+
+
+async def _loop_checkpoint_reserva_pendente():
+    # Janela de pagamento e curta (30min) e a reserva expira automaticamente
+    # via _loop_expiracao_reservas - por isso este checkpoint varre com
+    # intervalo bem mais curto que os demais loops de fundo.
+    intervalo = 120
+    minutos_antes_expirar = 10
+    logger.info(
+        "Checkpoint de recuperacao \'reserva pendente\' ativado: checagem a "
+        "cada %ss (dispara %smin antes do prazo de pagamento expirar).",
+        intervalo,
+        minutos_antes_expirar,
+    )
+
+    while True:
+        try:
+            processadas = await asyncio.to_thread(
+                checkpoint_reserva_pendente, minutos_antes_expirar
+            )
+            if processadas:
+                logger.info(
+                    "Checkpoint \'reserva pendente\' processou: %s", processadas
+                )
+        except Exception as exc:  # noqa: BLE001 - o loop de fundo nao pode morrer
+            logger.error(
+                "Falha inesperada no checkpoint \'reserva pendente\': %s", exc
+            )
         await asyncio.sleep(intervalo)
 
 
@@ -214,15 +268,25 @@ def create_app(
         selected_store = store or _default_store()
         tarefa = asyncio.create_task(_loop_expiracao_reservas(selected_store))
         tarefa_atendimento = asyncio.create_task(_loop_atendimento_realizado())
+        tarefa_checkpoint_link = asyncio.create_task(_loop_checkpoint_link_enviado())
+        tarefa_checkpoint_reserva = asyncio.create_task(
+            _loop_checkpoint_reserva_pendente()
+        )
         try:
             yield
         finally:
             tarefa.cancel()
             tarefa_atendimento.cancel()
+            tarefa_checkpoint_link.cancel()
+            tarefa_checkpoint_reserva.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await tarefa
             with contextlib.suppress(asyncio.CancelledError):
                 await tarefa_atendimento
+            with contextlib.suppress(asyncio.CancelledError):
+                await tarefa_checkpoint_link
+            with contextlib.suppress(asyncio.CancelledError):
+                await tarefa_checkpoint_reserva
 
     api = FastAPI(title="Cal.com → PagBank → Feegow", lifespan=lifespan)
 
