@@ -139,6 +139,37 @@ def atualizar_interacao_pessoa(person_id: str):
     _patch(f"/rest/people/{person_id}", {"lastinteractionat": _agora_iso()})
 
 
+def buscar_pessoa_por_id(person_id: str) -> dict | None:
+    """Busca uma Person no Twenty pelo id. Retorna None se a integracao nao
+    estiver configurada, se person_id for vazio, ou se a chamada falhar
+    (best effort - nunca levanta excecao)."""
+    if not _configurado() or not person_id:
+        return None
+    try:
+        data = _get(f"/rest/people/{person_id}")
+        return (data.get("data", {}) or {}).get("person")
+    except Exception:
+        logger.exception(
+            "Falha ao buscar pessoa por id (Twenty) para person_id=%s", person_id
+        )
+        return None
+
+
+def numero_whatsapp_da_oportunidade(oportunidade: dict) -> str | None:
+    """Resolve o numero de WhatsApp (apenas digitos, com DDI) da paciente
+    dona de uma oportunidade, a partir do relacionamento pointOfContact
+    (Person) da oportunidade. Usado pelos checkpoints de recuperacao de leads
+    para montar o chatId do envio real de WhatsApp para a paciente. Retorna
+    None se nao for possivel resolver (best effort - nunca levanta excecao)."""
+    person_id = (oportunidade or {}).get("pointOfContactId")
+    if not person_id:
+        return None
+    pessoa = buscar_pessoa_por_id(person_id)
+    whatsapp = (pessoa or {}).get("whatsapp") or ""
+    digitos = re.sub(r"\D", "", whatsapp)
+    return digitos or None
+
+
 def buscar_oportunidade_aberta(person_id: str):
     data = _get(
         "/rest/opportunities",

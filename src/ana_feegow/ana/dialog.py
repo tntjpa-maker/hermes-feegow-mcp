@@ -49,6 +49,30 @@ def notificar_equipe(telefone: str, mensagem: str, motivo: str) -> None:
             pass
 
 
+def notificar_paciente(chat_id: str, mensagem: str) -> bool:
+    """Envia uma mensagem de WhatsApp de verdade diretamente para a paciente
+    (nao para a equipe), reaproveitando o mesmo WHATSAPP_BRIDGE_URL e o mesmo
+    endpoint /send de notificar_equipe. Usado pelos checkpoints de
+    recuperacao de leads (link enviado / reserva pendente aguardando
+    pagamento) para tentar reengajar a paciente automaticamente, alem da
+    Task manual criada para a equipe. Best effort: nunca levanta excecao;
+    retorna True se o bridge respondeu com sucesso (2xx), False caso
+    contrario (e loga o erro)."""
+    try:
+        resp = requests.post(
+            f"{WHATSAPP_BRIDGE_URL}/send",
+            json={"chatId": chat_id, "message": mensagem},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception:
+        logger.exception(
+            "Falha ao notificar paciente via WhatsApp (chat_id=%s)", chat_id
+        )
+        return False
+
+
 def _sincronizar_twenty(telefone: str, conv, intencao: str) -> None:
     """Fluxo 1 do contrato ANA <-> Twenty: garante Person + Opportunity
     abertos no CRM sempre que a conversa tiver intencao comercial real.

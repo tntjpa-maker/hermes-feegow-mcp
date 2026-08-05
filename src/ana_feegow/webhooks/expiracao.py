@@ -1,10 +1,38 @@
 import logging
 
 from ana_feegow.services import twenty_service
+from ana_feegow.ana import dialog
 
 logger = logging.getLogger("webhooks")
 
 MOTIVO_PADRAO = "Sinal não pago dentro do prazo de 30 minutos."
+
+
+def _notificar_paciente_best_effort(oportunidade: dict, mensagem: str) -> bool:
+    """Resolve o WhatsApp da paciente dona da oportunidade (via pointOfContact
+    no Twenty) e envia `mensagem` de verdade pelo bridge do WhatsApp, usando
+    dialog.notificar_paciente (mesmo padrao de dialog.notificar_equipe). Best
+    effort: qualquer falha (numero nao encontrado, bridge fora do ar, etc.) e
+    apenas logada e retorna False - nunca interrompe o checkpoint nem impede
+    a criacao da Task de follow-up."""
+    opportunity_id = (oportunidade or {}).get("id")
+    try:
+        numero = twenty_service.numero_whatsapp_da_oportunidade(oportunidade)
+        if not numero:
+            logger.warning(
+                "Checkpoint de recuperacao: nao foi possivel resolver o "
+                "WhatsApp da paciente para opportunity_id=%s; mensagem nao enviada.",
+                opportunity_id,
+            )
+            return False
+        chat_id = f"{numero}@s.whatsapp.net"
+        return dialog.notificar_paciente(chat_id, mensagem)
+    except Exception:
+        logger.exception(
+            "Falha ao notificar paciente via WhatsApp para opportunity_id=%s",
+            opportunity_id,
+        )
+        return False
 
 
 def expirar_reservas_pendentes(store, calcom_client, minutos: int = 30, motivo: str = None):
@@ -68,11 +96,12 @@ def concluir_atendimentos_realizados(buffer_horas: int = 2):
 
 def checkpoint_link_enviado(minutos: int = 60):
     """Checkpoint de recuperacao 'Link enviado': varre oportunidades no
-    estagio 'Link de agendamento enviado' paradas ha mais de `minutos` e cria
-    uma Task de follow-up manual no Twenty para cada uma que ainda nao tem
-    follow-up registrado (evita duplicar a mesma task a cada varredura). Nao
-    envia nenhuma mensagem para a paciente - apenas cria a task para a equipe
-    humana agir manualmente. Retorna a lista do que foi processado, para log.
+    estagio 'Link de agendamento enviado' paradas ha mais de `minutos` e, para
+    cada uma que ainda nao tem follow-up registrado (evita duplicar a cada
+    varredura): cria uma Task de follow-up manual no Twenty para a equipe
+    humana agir, e envia (best effort) uma mensagem real de WhatsApp para a
+    paciente perguntando se ela conseguiu acessar o link. Retorna a lista do
+    que foi processado, para log.
     """
     processadas = []
     for oportunidade in twenty_service.listar_oportunidades_link_enviado_para_followup(
@@ -93,17 +122,30 @@ def checkpoint_link_enviado(minutos: int = 60):
             "horario. Considere um contato manual para recuperar o "
             "atendimento.",
         )
-        processadas.append({"opportunity_id": opportunity_id, "status": "followup_criado"})
+        whatsapp_enviado = _notificar_paciente_best_effort(
+            oportunidade,
+            "Ola! Conseguiu acessar o link de agendamento? Caso tenha "
+            "alguma duvida sobre os horarios, a consulta ou a forma de "
+            "pagamento, posso te ajudar por aqui.",
+        )
+        processadas.append(
+            {
+                "opportunity_id": opportunity_id,
+                "status": "followup_criado",
+                "whatsapp_enviado": whatsapp_enviado,
+            }
+        )
     return processadas
 
 
 def checkpoint_reserva_pendente(minutos_antes_expirar: int = 10):
     """Checkpoint de recuperacao 'Reserva pendente': varre oportunidades no
     estagio 'Reserva aguardando pagamento' cujo prazo de pagamento esta a
-    `minutos_antes_expirar` minutos (ou menos) de expirar e cria uma Task de
-    follow-up manual no Twenty para cada uma que ainda nao tem follow-up
-    registrado. Nao envia nenhuma mensagem para a paciente. Retorna a lista do
-    que foi processado, para log.
+    `minutos_antes_expirar` minutos (ou menos) de expirar e, para cada uma
+    que ainda nao tem follow-up registrado: cria uma Task de follow-up
+    manual no Twenty para a equipe humana agir, e envia (best effort) uma
+    mensagem real de WhatsApp perguntando se a paciente precisa de ajuda
+    com o pagamento. Retorna a lista do que foi processado, para log.
     """
     processadas = []
     for oportunidade in twenty_service.listar_oportunidades_reserva_pendente_para_followup(
@@ -125,5 +167,18 @@ def checkpoint_reserva_pendente(minutos_antes_expirar: int = 10):
             "automaticamente.",
             campo_controle="followUpReservaCriadoEm",
         )
-        processadas.append({"opportunity_id": opportunity_id, "status": "followup_criado"})
+        whatsapp_enviado = _notificar_paciente_best_effort(
+            oportunidade,
+            "Ola! Identificamos que sua reserva foi iniciada, mas o "
+            "pagamento do sinal ainda nao foi concluido. O horario fica "
+            "reservado por ate 30 minutos. Posso te ajudar com alguma "
+            "dificuldade no pagamento?",
+        )
+        processadas.append(
+            {
+                "opportunity_id": opportunity_id,
+                "status": "followup_criado",
+                "whatsapp_enviado": whatsapp_enviado,
+            }
+        )
     return processadas
