@@ -1,5 +1,7 @@
 import logging
 
+from ana_feegow.services import twenty_service
+
 logger = logging.getLogger("webhooks")
 
 MOTIVO_PADRAO = "Sinal não pago dentro do prazo de 30 minutos."
@@ -38,7 +40,26 @@ def expirar_reservas_pendentes(store, calcom_client, minutos: int = 30, motivo: 
             continue
 
         store.update_pending_status(uid, "EXPIRED")
+        twenty_service.registrar_perdido(
+            pending["booking"].get("opportunity_id", ""),
+            "PAGAMENTO_EXPIRADO",
+        )
         logger.info("Reserva %s expirou sem pagamento e foi cancelada no Cal.com.", uid)
         processadas.append({"uid": uid, "status": "expirado"})
 
+    return processadas
+
+
+def concluir_atendimentos_realizados(buffer_horas: int = 2):
+    """Varre oportunidades no estagio 'Agendado e pago' cujo horario da
+    consulta ja passou (com uma margem de `buffer_horas`) e marca cada uma
+    como 'Atendimento realizado' no Twenty. Retorna a lista do que foi
+    processado, para log."""
+    processadas = []
+    for oportunidade in twenty_service.listar_oportunidades_para_concluir(buffer_horas):
+        opportunity_id = oportunidade.get("id")
+        if not opportunity_id:
+            continue
+        twenty_service.registrar_atendimento_realizado(opportunity_id)
+        processadas.append({"opportunity_id": opportunity_id, "status": "concluido"})
     return processadas

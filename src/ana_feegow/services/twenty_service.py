@@ -12,7 +12,7 @@ conversa.
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -247,3 +247,138 @@ def registrar_link_enviado(opportunity_id: str, person_id: str = None):
             _post("/rest/noteTargets", target)
     except Exception:
         logger.exception("Falha no Fluxo 3 (Twenty) para opportunity_id=%s", opportunity_id)
+
+
+LOSS_REASONS_VALIDOS = (
+    "PAGAMENTO_EXPIRADO",
+    "CANCELAMENTO_PACIENTE",
+    "SEM_RESPOSTA",
+    "HORARIO_INDISPONIVEL",
+    "OUTRO",
+)
+
+
+
+def listar_oportunidades_para_concluir(buffer_horas: int = 2):
+    """Retorna oportunidades no estagio 'Agendado e pago' cujo horario da
+    consulta (scheduledAt) ja passou ha mais de `buffer_horas`. Usado pelo
+    job periodico que marca 'Atendimento realizado'. Best effort - retorna
+    lista vazia se a integracao nao estiver disponivel ou a chamada falhar."""
+    if not _configurado():
+        return []
+    try:
+        data = _get(
+            "/rest/opportunities",
+            {
+                "filter": "stage[eq]:AGENDADO_E_PAGO",
+                "limit": 200,
+            },
+        )
+        registros = data.get("data", {}).get("opportunities", []) or []
+        limite = datetime.now(timezone.utc) - timedelta(hours=buffer_horas)
+        elegiveis = []
+        for oportunidade in registros:
+            scheduled_raw = oportunidade.get("scheduledAt")
+            if not scheduled_raw:
+                continue
+            try:
+                scheduled_dt = datetime.fromisoformat(str(scheduled_raw).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if scheduled_dt <= limite:
+                elegiveis.append(oportunidade)
+        return elegiveis
+    except Exception:
+        logger.exception("Falha ao listar oportunidades para concluir (Twenty)")
+        return []
+
+def registrar_reserva_aguardando_pagamento(opportunity_id: str, payment_deadline_at: str = None) -> None:
+    """Estagio 'Reserva aguardando pagamento': marcado quando o Cal.com cria a
+    reserva (BOOKING_CREATED) para uma consulta paga e o checkout do PagBank
+    e gerado. Best effort - qualquer falha e apenas logada, nunca levanta."""
+    if not _configurado() or not opportunity_id:
+        return
+    try:
+        payload = {
+            "stage": "RESERVA_AGUARDANDO_PAGAMENTO",
+            "paymentStatus": "PENDING",
+        }
+        if payment_deadline_at:
+            payload["paymentDeadlineAt"] = payment_deadline_at
+        _patch(f"/rest/opportunities/{opportunity_id}", payload)
+    except Exception:
+        logger.exception(
+            "Falha ao registrar reserva aguardando pagamento (Twenty) para opportunity_id=%s",
+            opportunity_id,
+        )
+
+
+def registrar_agendado_e_pago(
+    opportunity_id: str,
+    feegow_appointment_id: str = None,
+    pagbank_transaction_id: str = None,
+    scheduled_at: str = None,
+    cal_booking_uid: str = None,
+) -> None:
+    """Estagio 'Agendado e pago': marcado quando o PagBank confirma o
+    pagamento e o agendamento e criado no Feegow. Best effort - qualquer
+    falha e apenas logada, nunca levanta."""
+    if not _configurado() or not opportunity_id:
+        return
+    try:
+        payload = {
+            "stage": "AGENDADO_E_PAGO",
+            "paymentStatus": "PAID",
+            "paidAt": _agora_iso(),
+        }
+        if feegow_appointment_id:
+            payload["feegowAppointmentId"] = str(feegow_appointment_id)
+        if pagbank_transaction_id:
+            payload["pagbankTransactionId"] = str(pagbank_transaction_id)
+        if scheduled_at:
+            payload["scheduledAt"] = scheduled_at
+        if cal_booking_uid:
+            payload["calBookingUid"] = cal_booking_uid
+        _patch(f"/rest/opportunities/{opportunity_id}", payload)
+    except Exception:
+        logger.exception(
+            "Falha ao registrar agendado e pago (Twenty) para opportunity_id=%s",
+            opportunity_id,
+        )
+
+
+def registrar_atendimento_realizado(opportunity_id: str) -> None:
+    """Estagio 'Atendimento realizado': marcado apos o horario da consulta ja
+    ter passado. Best effort - qualquer falha e apenas logada, nunca levanta."""
+    if not _configurado() or not opportunity_id:
+        return
+    try:
+        _patch(
+            f"/rest/opportunities/{opportunity_id}",
+            {"stage": "ATENDIMENTO_REALIZADO", "completedAt": _agora_iso()},
+        )
+    except Exception:
+        logger.exception(
+            "Falha ao registrar atendimento realizado (Twenty) para opportunity_id=%s",
+            opportunity_id,
+        )
+
+
+def registrar_perdido(opportunity_id: str, loss_reason: str = "OUTRO") -> None:
+    """Estagio 'Perdido': marcado quando a reserva e cancelada pela paciente
+    ou o pagamento expira sem confirmacao. Best effort - qualquer falha e
+    apenas logada, nunca levanta."""
+    if not _configurado() or not opportunity_id:
+        return
+    if loss_reason not in LOSS_REASONS_VALIDOS:
+        loss_reason = "OUTRO"
+    try:
+        _patch(
+            f"/rest/opportunities/{opportunity_id}",
+            {"stage": "PERDIDO", "lossReason": loss_reason},
+        )
+    except Exception:
+        logger.exception(
+            "Falha ao registrar perdido (Twenty) para opportunity_id=%s",
+            opportunity_id,
+        )

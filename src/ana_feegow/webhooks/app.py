@@ -11,7 +11,10 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ana_feegow.webhooks.calcom_client import CalComClient
-from ana_feegow.webhooks.expiracao import expirar_reservas_pendentes
+from ana_feegow.webhooks.expiracao import (
+    concluir_atendimentos_realizados,
+    expirar_reservas_pendentes,
+)
 from ana_feegow.config import settings
 from ana_feegow.webhooks.email_client import EmailClient
 from ana_feegow.webhooks.feegow_sync_service import FeegowSyncService
@@ -84,6 +87,22 @@ async def _loop_expiracao_reservas(selected_store):
                 logger.info("Varredura de expiração processou: %s", processadas)
         except Exception as exc:  # noqa: BLE001 - o loop de fundo não pode morrer
             logger.error("Falha inesperada na varredura de expiração: %s", exc)
+        await asyncio.sleep(intervalo)
+
+
+async def _loop_atendimento_realizado():
+    intervalo = 1800
+    logger.info(
+        "Varredura de atendimento realizado ativada: checagem a cada %ss.",
+        intervalo,
+    )
+    while True:
+        try:
+            processadas = await asyncio.to_thread(concluir_atendimentos_realizados)
+            if processadas:
+                logger.info("Varredura de atendimento realizado processou: %s", processadas)
+        except Exception as exc:  # noqa: BLE001 - o loop de fundo nao pode morrer
+            logger.error("Falha inesperada na varredura de atendimento realizado: %s", exc)
         await asyncio.sleep(intervalo)
 
 
@@ -194,12 +213,16 @@ def create_app(
     async def lifespan(_app: FastAPI):
         selected_store = store or _default_store()
         tarefa = asyncio.create_task(_loop_expiracao_reservas(selected_store))
+        tarefa_atendimento = asyncio.create_task(_loop_atendimento_realizado())
         try:
             yield
         finally:
             tarefa.cancel()
+            tarefa_atendimento.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await tarefa
+            with contextlib.suppress(asyncio.CancelledError):
+                await tarefa_atendimento
 
     api = FastAPI(title="Cal.com → PagBank → Feegow", lifespan=lifespan)
 

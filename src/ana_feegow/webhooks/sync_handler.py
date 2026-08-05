@@ -3,6 +3,7 @@ import json
 import logging
 
 from ana_feegow.webhooks.cal_parser import parse_booking
+from ana_feegow.services import twenty_service
 
 logger = logging.getLogger("webhooks")
 
@@ -36,6 +37,7 @@ class SyncHandler:
             checkout.checkout_id,
             checkout.payment_url,
         )
+        twenty_service.registrar_reserva_aguardando_pagamento(booking.opportunity_id)
         return checkout
 
     def _cancelar_reserva_com_dados_invalidos(self, uid, exc):
@@ -238,6 +240,12 @@ class SyncHandler:
                 self.service.cancel_booking(mapping["feegow_appointment_id"])
                 self.store.update_status(mapping["cal_uid"], "cancelled")
                 self._notificar_cancelamento(envelope)
+                pending_para_opp = self.store.get_pending_booking(mapping["cal_uid"])
+                if pending_para_opp:
+                    twenty_service.registrar_perdido(
+                        pending_para_opp["booking"].get("opportunity_id", ""),
+                        "CANCELAMENTO_PACIENTE",
+                    )
             else:
                 pending_uid = uid or related_uid
                 pending = self.store.get_pending_booking(pending_uid)
@@ -247,6 +255,11 @@ class SyncHandler:
                 # se o pagamento estiver sendo confirmado nesse exato
                 # momento (self.store.claim_pending_status em
                 # PagBankHandler), não sobrescrevemos o resultado dele.
+                twenty_service.registrar_perdido(
+                    pending["booking"].get("opportunity_id", ""),
+                    "CANCELAMENTO_PACIENTE",
+                )
+
                 if not self.store.claim_pending_status(
                     pending_uid, pending["payment_status"], "CANCELED"
                 ):

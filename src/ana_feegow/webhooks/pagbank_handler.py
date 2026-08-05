@@ -2,6 +2,7 @@ import hashlib
 import json
 
 from ana_feegow.webhooks.cal_parser import CalBooking
+from ana_feegow.services import twenty_service
 
 RESERVA_INDISPONIVEL_PARA_PAGAMENTO = {"CANCELED", "EXPIRED", "REPLACED", "EXPIRING", "PROCESSING"}
 
@@ -141,6 +142,13 @@ class PagBankHandler:
             appointment_id,
             "scheduled",
             pagbank_transaction_id=self.charge_id(payload),
+        )
+        twenty_service.registrar_agendado_e_pago(
+            booking.opportunity_id,
+            feegow_appointment_id=appointment_id,
+            pagbank_transaction_id=self.charge_id(payload),
+            scheduled_at=f"{booking.data}T{booking.horario}-03:00",
+            cal_booking_uid=booking.uid,
         )
         self.store.update_pending_status(uid, "PAID")
         self.store.mark_event(key, "PAGBANK_PAID", uid)

@@ -17,6 +17,7 @@ class CalBooking:
     nascimento: str
     celular: str
     notas: str
+    opportunity_id: str = ""
 
 
 def _value(container: dict, key: str, default=""):
@@ -81,6 +82,8 @@ def parse_booking(envelope: dict) -> CalBooking:
     responses = payload.get("responses") or {}
     user_fields = payload.get("userFieldsResponses") or {}
 
+    opportunity_id = str((payload.get("metadata") or {}).get("opportunityId", "") or "")
+
     def answer(key, default=""):
         return _value(user_fields, key, _value(responses, key, default))
 
@@ -123,4 +126,5 @@ def parse_booking(envelope: dict) -> CalBooking:
         nascimento=nascimento,
         celular=celular,
         notas=str(answer("notes", payload.get("additionalNotes", "")) or ""),
+        opportunity_id=opportunity_id,
     )
