@@ -10,6 +10,7 @@ from ana_feegow.services.retorno_service import (
     link_consulta_retorno_online,
     verificar_elegibilidade_retorno,
 )
+from ana_feegow.services import twenty_service
 
 import os
 import requests
@@ -44,12 +45,40 @@ def notificar_equipe(telefone: str, mensagem: str, motivo: str) -> None:
             pass
 
 
+def _sincronizar_twenty(telefone: str, conv, intencao: str) -> None:
+    """Fluxo 1 do contrato ANA <-> Twenty: garante Person + Opportunity
+    abertos no CRM sempre que a conversa tiver intencao comercial real.
+    Best effort - qualquer falha e apenas logada, nunca interrompe o
+    atendimento da paciente."""
+    if not twenty_service.e_intencao_comercial(intencao, conv.state):
+        return
+
+    person_id, opportunity_id = twenty_service.garantir_pessoa_e_oportunidade(telefone)
+    if person_id:
+        conv.update("twenty_person_id", person_id)
+    if opportunity_id:
+        conv.update("twenty_opportunity_id", opportunity_id)
+
+
+def _link_com_metadata_e_registro(conv, link_base: str) -> str:
+    """Fluxo 3 do contrato ANA <-> Twenty: embute o opportunityId no link
+    do Cal.com e registra no CRM que o link foi enviado. Best effort -
+    se o Twenty nao estiver configurado ou a oportunidade nao existir,
+    apenas retorna o link original sem modificacao."""
+    opportunity_id = conv.data.get("twenty_opportunity_id")
+    person_id = conv.data.get("twenty_person_id")
+    twenty_service.registrar_link_enviado(opportunity_id, person_id)
+    return twenty_service.montar_link_com_metadata(link_base, opportunity_id)
+
+
 def responder(telefone: str, mensagem: str):
 
     conv = Conversation(telefone)
 
     acao = decidir(mensagem)
     intencao = acao.get("intencao")
+
+    _sincronizar_twenty(telefone, conv, intencao)
 
     if acao.get("acao") == "HUMANO" or intencao == "informacao":
         notificar_equipe(
@@ -93,9 +122,9 @@ def responder(telefone: str, mensagem: str):
         # secretária de verdade (ver SOUL.md, seções 1 e 5). O que a
         # paciente disser em seguida já é suficiente para o próximo passo
         # decidir se é retorno ou consulta nova, no estado
-        # "aguardando_motivo" logo abaixo.
+        # "aguardando_motivo" abaixo.
         return (
-            "Oi! 😊 Aqui é a Ana, da Clínica Magnólia — assistente da "
+            "Oi! 😊Aqui é a Ana, da Clínica Magnólia — assistente da "
             "Dra. Thalita.\n\n"
             "Como posso te ajudar?"
         )
@@ -108,11 +137,12 @@ def responder(telefone: str, mensagem: str):
                 elegibilidade = verificar_elegibilidade_retorno(telefone)
             except FeegowError:
                 conv.next("finalizado")
+                link = _link_com_metadata_e_registro(conv, link_consulta_presencial())
                 return (
                     "Não consegui confirmar sua elegibilidade para retorno "
                     "gratuito no momento, mas você pode agendar normalmente "
                     "pelo link abaixo:\n\n"
-                    f"{link_consulta_presencial()}"
+                    f"{link}"
                 )
 
             conv.update("elegibilidade_retorno", elegibilidade)
@@ -127,12 +157,13 @@ def responder(telefone: str, mensagem: str):
                 )
 
             conv.next("finalizado")
+            link = _link_com_metadata_e_registro(conv, link_consulta_presencial())
             return (
                 "Verifiquei aqui e o prazo para retorno gratuito (30 dias após "
                 "a última consulta) já passou, então este agendamento será "
                 "tratado como uma nova consulta.\n\n"
                 "Você pode agendar pelo link abaixo:\n\n"
-                f"{link_consulta_presencial()}"
+                f"{link}"
             )
 
         # Consulta nova (não é retorno): a ANA nunca pergunta data nem
@@ -149,11 +180,12 @@ def responder(telefone: str, mensagem: str):
         conv.update("tipo_consulta", tipo_consulta)
         conv.next("finalizado")
 
-        link = (
+        link_base = (
             link_consulta_online()
             if tipo_consulta == "consulta_online"
             else link_consulta_presencial()
         )
+        link = _link_com_metadata_e_registro(conv, link_base)
 
         return (
             "Você pode escolher o melhor dia e horário direto por este "
@@ -168,15 +200,17 @@ def responder(telefone: str, mensagem: str):
         conv.next("finalizado")
         msg = mensagem.lower()
         if any(x in msg for x in ["online", "video", "vídeo", "teleconsulta"]):
+            link = _link_com_metadata_e_registro(conv, link_consulta_retorno_online())
             return (
                 "Perfeito! Você pode agendar seu retorno online sem custo "
                 "pelo link abaixo:\n\n"
-                f"{link_consulta_retorno_online()}"
+                f"{link}"
             )
+        link = _link_com_metadata_e_registro(conv, link_consulta_retorno())
         return (
             "Perfeito! Você pode agendar seu retorno presencial sem custo "
             "pelo link abaixo:\n\n"
-            f"{link_consulta_retorno()}"
+            f"{link}"
         )
 
     return "Não consegui entender."
