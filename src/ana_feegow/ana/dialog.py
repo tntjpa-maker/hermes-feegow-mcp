@@ -16,12 +16,17 @@ from ana_feegow.services import twenty_service
 
 import os
 import requests
+import time
 
 EQUIPE_CHAT_IDS = [
     "5521964577547@s.whatsapp.net",
     "5521985929056@s.whatsapp.net",
 ]
 WHATSAPP_BRIDGE_URL = os.environ.get("WHATSAPP_BRIDGE_URL", "http://127.0.0.1:3000")
+
+# TTL (em segundos) que a Ana fica em modo de espera apos um pedido de
+# atendimento humano (#sech) antes de retomar o atendimento automatico.
+HUMANO_TTL_SEGUNDOS = 45 * 60
 
 logger = logging.getLogger(__name__)
 
@@ -136,13 +141,30 @@ def responder(telefone: str, mensagem: str):
                 telefone,
             )
 
-    if acao.get("acao") == "HUMANO" or intencao == "informacao":
+    if acao.get("acao") == "HUMANO":
+        notificar_equipe(telefone, mensagem, "Pediu atendimento humano")
+        conv.update("humano_ts", time.time())
+        conv.next("aguardando_humano")
+        return (
+            "Claro. Vou encaminhar seu atendimento para nossa secretária "
+            "humana. Ela vai te responder por aqui assim que possível."
+        )
+
+    if conv.state == "aguardando_humano":
+        humano_ts = conv.data.get("humano_ts", 0)
+        if time.time() - humano_ts < HUMANO_TTL_SEGUNDOS:
+            return (
+                "Nossa equipe já foi avisada e vai te responder por aqui em "
+                "breve. Se preferir, pode continuar me contando o que precisa "
+                "que eu ajudo no que for possível."
+            )
+        conv.next("inicio")
+
+    if intencao == "informacao" and conv.state == "inicio":
         notificar_equipe(
             telefone,
             mensagem,
-            "Pediu atendimento humano"
-            if acao.get("acao") == "HUMANO"
-            else "Pergunta fora da base de conhecimento oficial",
+            "Pergunta fora da base de conhecimento oficial",
         )
 
     # Perguntas informativas (preço, endereço, convênio, explicação sobre

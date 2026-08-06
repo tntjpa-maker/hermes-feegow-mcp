@@ -12,6 +12,7 @@ def decidir(mensagem: str) -> dict:
         "humano",
         "secretária",
         "secretaria",
+        "#sech",
     ]):
         return {
             "acao": "HUMANO",
@@ -144,6 +145,20 @@ def decidir(mensagem: str) -> dict:
         return {
             "acao": "AGENDAR",
             "intencao": "agendamento",
+        }
+
+    saudacoes = {
+        "oi", "ola", "olá", "bom dia", "boa tarde", "boa noite",
+        "oi bom dia", "oi boa tarde", "oi boa noite",
+        "ola bom dia", "ola boa tarde", "ola boa noite",
+        "olá bom dia", "olá boa tarde", "olá boa noite",
+        "eae", "e ai", "e aí", "opa", "salve", "oii", "oie",
+    }
+    msg_sem_pontuacao = msg.strip("!?.,; ")
+    if msg_sem_pontuacao in saudacoes:
+        return {
+            "acao": "RESPONDER",
+            "intencao": "saudacao",
         }
 
     return {
