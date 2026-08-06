@@ -254,12 +254,32 @@ def responder(telefone: str, mensagem: str):
         # (sinal de 20%) e a confirmação do agendamento no Feegow acontecem
         # depois, pelo webhook do Cal.com (ver
         # ana_feegow.webhooks.feegow_sync_service.FeegowSyncService).
+        conv.next("aguardando_modalidade_nova")
+        return (
+            "Para eu te ajudar melhor, essa consulta seria presencial, "
+            "online ou híbrida (um pacote com atendimento presencial e "
+            "online)?"
+        )
+
+    if conv.state == "aguardando_modalidade_nova":
         tipo_consulta = identificar_servico(mensagem)
         conv.update("tipo_consulta", tipo_consulta)
         conv.next("aguardando_origem")
+
+        explicacao_hibrida = ""
+        if tipo_consulta == "consulta_hibrida":
+            explicacao_hibrida = (
+                "A consulta híbrida é um pacote com um atendimento "
+                "presencial e um atendimento online, pelo mesmo valor da "
+                "consulta presencial. Vou te mandar o link de agendamento "
+                "presencial normalmente - a etapa online é combinada "
+                "direto com a nossa equipe depois.\n\n"
+            )
+
         return (
-            "Antes de te mandar o link, como voc\u00ea conheceu a Dra. "
-            "Thalita? (Instagram, indica\u00e7\u00e3o, Google...)"
+            explicacao_hibrida
+            + "Antes de te mandar o link, como você conheceu a Dra. "
+            "Thalita? (Instagram, indicação, Google...)"
         )
 
     if conv.state == "aguardando_origem":
@@ -288,11 +308,11 @@ def responder(telefone: str, mensagem: str):
         link = _link_com_metadata_e_registro(conv, link_base)
 
         return (
-            "Voc\u00ea pode escolher o melhor dia e hor\u00e1rio direto por este "
+            "Você pode escolher o melhor dia e horário direto por este "
             "link:\n\n"
             f"{link}\n\n"
-            "Para reservar o hor\u00e1rio \u00e9 cobrado um sinal de 20% do valor da "
-            "consulta - esse valor garante sua reserva, e a diferen\u00e7a \u00e9 "
+            "Para reservar o horário é cobrado um sinal de 20% do valor da "
+            "consulta - esse valor garante sua reserva, e a diferença é "
             "paga somente depois da consulta."
         )
 
