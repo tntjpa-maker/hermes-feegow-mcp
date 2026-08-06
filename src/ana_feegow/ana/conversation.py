@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 
 
@@ -12,6 +13,14 @@ class Conversation:
         self.telefone = telefone
         self.state = "inicio"
         self.data = {}
+        # Timestamp (epoch) da ultima vez que esta conversa foi salva.
+        # Usado pelo dialog.responder() para detectar conversas paradas no
+        # meio do fluxo (ver CONVERSATION_TTL_SEGUNDOS em dialog.py) - sem
+        # isso, uma mensagem nova e sem relacao alguma com o contexto (ex:
+        # "quero agendar uma consulta" dias depois de uma conversa que
+        # ficou pela metade) pode ser silenciosamente interpretada como
+        # resposta a pergunta que ficou pendente.
+        self.atualizado_em = None
 
         if telefone:
             self.carregar()
@@ -27,7 +36,8 @@ class Conversation:
     def get(self):
         return {
             "state": self.state,
-            "data": self.data
+            "data": self.data,
+            "atualizado_em": self.atualizado_em,
         }
 
 
@@ -36,6 +46,8 @@ class Conversation:
             return
 
         BASE.mkdir(parents=True, exist_ok=True)
+
+        self.atualizado_em = time.time()
 
         arquivo = BASE / f"{self.telefone}.json"
 
@@ -58,3 +70,4 @@ class Conversation:
 
         self.state = dados["state"]
         self.data = dados["data"]
+        self.atualizado_em = dados.get("atualizado_em")

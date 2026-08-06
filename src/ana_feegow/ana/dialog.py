@@ -30,6 +30,15 @@ WHATSAPP_BRIDGE_URL = os.environ.get("WHATSAPP_BRIDGE_URL", "http://127.0.0.1:30
 # atendimento humano (#sech) antes de retomar o atendimento automatico.
 HUMANO_TTL_SEGUNDOS = 45 * 60
 
+# TTL (em segundos) para uma conversa parada no meio do fluxo de
+# agendamento (por exemplo, a paciente nunca respondeu "como voce
+# conheceu a Dra. Thalita?"). Sem isso, uma mensagem nova sem nenhuma
+# relacao com aquele contexto - enviada horas ou dias depois - seria
+# silenciosamente interpretada como resposta a pergunta que ficou
+# pendente, fazendo a Ana "deduzir" (por exemplo) que a consulta e
+# presencial sem nunca perguntar de novo. Ver reset em responder().
+CONVERSATION_TTL_SEGUNDOS = 3 * 60 * 60
+
 logger = logging.getLogger(__name__)
 
 
@@ -124,6 +133,20 @@ def _classificar_origem_lead(mensagem: str) -> str:
 def responder(telefone: str, mensagem: str):
 
     conv = Conversation(telefone)
+
+    # Conversa ja finalizada (agendamento anterior concluido) ou parada no
+    # meio do fluxo ha mais de CONVERSATION_TTL_SEGUNDOS: tratamos como uma
+    # conversa nova em vez de continuar de onde parou. "aguardando_humano"
+    # fica de fora porque ja tem seu proprio TTL dedicado logo abaixo.
+    if conv.state not in ("inicio", "aguardando_humano"):
+        conversa_finalizada = conv.state == "finalizado"
+        conversa_parada = (
+            conv.atualizado_em is not None
+            and time.time() - conv.atualizado_em > CONVERSATION_TTL_SEGUNDOS
+        )
+        if conversa_finalizada or conversa_parada:
+            conv.state = "inicio"
+            conv.data = {}
 
     acao = decidir(mensagem)
     intencao = acao.get("intencao")
