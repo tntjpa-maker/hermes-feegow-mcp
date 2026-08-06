@@ -19,4 +19,9 @@ CLINIC = {
     "calcom_slug_presencial": "drathalita/niteroi",
     "calcom_slug_online": "drathalita/consulta-online",
     "calcom_slug_retorno_online": "drathalita/consulta-retorno-online",
+    # Consulta hibrida (pacote com uma consulta presencial + uma
+    # consulta online, pelo mesmo valor da presencial). Ver
+    # ana_feegow.ana.dialog para o fluxo completo.
+    "calcom_slug_hibrida_presencial": "drathalita/hibridapresencial",
+    "calcom_slug_hibrida_online": "drathalita/hibridaonline",
 }

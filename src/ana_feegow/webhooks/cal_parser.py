@@ -68,10 +68,15 @@ def _consultation_type(payload: dict) -> str:
     # ana_feegow.services.retorno_service.
     if event_id == 9 or "consulta-retorno" in slug or "retorno" in slug:
         return "consulta_retorno"
-    if event_id == 7 or "niteroi" in slug or "presencial" in slug:
-        return "consulta_presencial"
+    # Precisa vir ANTES da checagem de presencial/online: os slugs dos
+    # eventos hibridos (drathalita/hibridapresencial,
+    # drathalita/hibridaonline) contem "presencial"/"online" como
+    # substring, e sem essa ordem cairiam nos ramos de presencial/online
+    # comuns em vez do ramo hibrida.
     if "hibrid" in slug:
         return "consulta_hibrida"
+    if event_id == 7 or "niteroi" in slug or "presencial" in slug:
+        return "consulta_presencial"
     if "online" in slug:
         return "consulta_online"
     raise ValueError(f"Tipo de evento Cal.com não mapeado: {event_id}/{slug}")

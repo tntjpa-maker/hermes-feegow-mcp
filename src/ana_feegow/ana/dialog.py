@@ -6,6 +6,8 @@ from ana_feegow.ana.knowledge import RESPOSTAS
 from ana_feegow.errors import FeegowError
 from ana_feegow.ana.service import identificar_servico
 from ana_feegow.services.retorno_service import (
+    link_consulta_hibrida_online,
+    link_consulta_hibrida_presencial,
     link_consulta_online,
     link_consulta_presencial,
     link_consulta_retorno,
@@ -247,13 +249,16 @@ def responder(telefone: str, mensagem: str):
         # Consulta nova (não é retorno): a ANA nunca pergunta data nem
         # horário - ela identifica o tipo de serviço e envia direto o link
         # do Cal.com correspondente, para a paciente escolher livremente o
-        # melhor dia e horário por conta própria. A "híbrida" é uma
-        # etiqueta de serviço/preço no Feegow (um pacote com um atendimento
-        # presencial e um online), não um link de agenda à parte: por isso
-        # ela usa o mesmo link presencial da primeira etapa. A reserva
-        # (sinal de 20%) e a confirmação do agendamento no Feegow acontecem
-        # depois, pelo webhook do Cal.com (ver
+        # melhor dia e horário por conta própria. A reserva (sinal de 20%)
+        # e a confirmação do agendamento no Feegow acontecem depois, pelo
+        # webhook do Cal.com (ver
         # ana_feegow.webhooks.feegow_sync_service.FeegowSyncService).
+        # A híbrida tem dois links dedicados no Cal.com (um para quando a
+        # primeira etapa é presencial, outro para quando é online), ambos
+        # mapeados no Feegow para o procedimento/valor da híbrida - ver
+        # ana_feegow.webhooks.cal_parser._consultation_type. A segunda
+        # etapa (retorno) não é cobrada nem enviada pela ANA; a paciente
+        # agenda por conta própria depois, usando o link de retorno comum.
         conv.next("aguardando_modalidade_nova")
         return (
             "Para eu te ajudar melhor, essa consulta seria presencial, "
@@ -264,21 +269,37 @@ def responder(telefone: str, mensagem: str):
     if conv.state == "aguardando_modalidade_nova":
         tipo_consulta = identificar_servico(mensagem)
         conv.update("tipo_consulta", tipo_consulta)
-        conv.next("aguardando_origem")
 
-        explicacao_hibrida = ""
         if tipo_consulta == "consulta_hibrida":
-            explicacao_hibrida = (
+            conv.next("aguardando_modalidade_hibrida")
+            return (
                 "A consulta híbrida é um pacote com um atendimento "
                 "presencial e um atendimento online, pelo mesmo valor da "
-                "consulta presencial. Vou te mandar o link de agendamento "
-                "presencial normalmente - a etapa online é combinada "
-                "direto com a nossa equipe depois.\n\n"
+                "consulta presencial. A primeira etapa (que vamos "
+                "agendar agora) vai ser presencial ou online? A segunda "
+                "etapa (retorno) você mesma agenda depois, sem custo "
+                "adicional."
             )
 
+        conv.next("aguardando_origem")
         return (
-            explicacao_hibrida
-            + "Antes de te mandar o link, como você conheceu a Dra. "
+            "Antes de te mandar o link, como você conheceu a Dra. "
+            "Thalita? (Instagram, indicação, Google...)"
+        )
+
+    if conv.state == "aguardando_modalidade_hibrida":
+        primeira_etapa = (
+            "online"
+            if any(
+                x in mensagem.lower()
+                for x in ["online", "vídeo", "video", "teleconsulta"]
+            )
+            else "presencial"
+        )
+        conv.update("hibrida_primeira_etapa", primeira_etapa)
+        conv.next("aguardando_origem")
+        return (
+            "Antes de te mandar o link, como você conheceu a Dra. "
             "Thalita? (Instagram, indicação, Google...)"
         )
 
@@ -300,11 +321,17 @@ def responder(telefone: str, mensagem: str):
                 )
 
         tipo_consulta = conv.data.get("tipo_consulta")
-        link_base = (
-            link_consulta_online()
-            if tipo_consulta == "consulta_online"
-            else link_consulta_presencial()
-        )
+        if tipo_consulta == "consulta_hibrida":
+            primeira_etapa = conv.data.get("hibrida_primeira_etapa")
+            link_base = (
+                link_consulta_hibrida_online()
+                if primeira_etapa == "online"
+                else link_consulta_hibrida_presencial()
+            )
+        elif tipo_consulta == "consulta_online":
+            link_base = link_consulta_online()
+        else:
+            link_base = link_consulta_presencial()
         link = _link_com_metadata_e_registro(conv, link_base)
 
         return (
