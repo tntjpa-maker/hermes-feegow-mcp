@@ -1,4 +1,14 @@
 import re
+import unicodedata
+
+
+def _sem_acentos(s: str) -> str:
+    """Remove acentos/diacriticos para tornar o casamento de palavras-chave
+    resiliente a variacoes de digitacao (pacientes frequentemente omitem
+    acentos, principalmente no celular). Usado apenas para comparacao, nunca
+    para o texto exibido a paciente."""
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+
 
 # Sinais de alarme clinicos (AGENTS.md, Secao 6): a clinica define que estes
 # sinais devem "interromper imediatamente qualquer atendimento comercial",
@@ -40,7 +50,13 @@ _SANGRAMENTO_BASE = r"sangr\w*|sangue"
 _SANGRAMENTO_INTENSIDADE = r"muit\w*|intens\w*|fort\w*|demais|bastante"
 
 _DOR_BASE = r"\bdor\b"
-_DOR_INTENSIDADE = r"muit\w*|intens\w*|fort\w*|insuport[aá]vel|demais"
+# Inclui "subit[ao]" (dor subita) alem dos qualificadores de intensidade: uma
+# dor descrita como subita e, por si so, um sinal de alarme (ex.: "dor
+# pelvica subita e muito forte"), mesmo quando a palavra de intensidade fica
+# fora da janela de proximidade por causa de palavras intercaladas. Compara
+# sempre contra texto sem acentos (ver _sem_acentos), por isso basta a forma
+# ascii aqui.
+_DOR_INTENSIDADE = r"muit\w*|intens\w*|fort\w*|insuportavel|demais|subit[ao]"
 
 SINAIS_DE_ALARME = [
     # Sangramento e dor: ver _termo_proximo() acima, nao entram nesta lista.
@@ -60,6 +76,23 @@ SINAIS_DE_ALARME = [
     # Gestante com dor, sangramento ou perda de líquido
     "perdendo líquido", "perdendo liquido", "bolsa estourou",
     "rompeu a bolsa", "bolsa rompeu",
+    # Dor no peito: sempre tratada como alarme, independente de
+    # qualificador de intensidade, por risco cardiaco/pulmonar.
+    "dor no peito", "dor no torax",
+    # Reacao alergica a medicamento (risco de anafilaxia)
+    "reacao alergica", "reacao alergica ao medicamento", "alergia forte",
+    "alergia grave",
+    # Sinais de infeccao pos-procedimento
+    "secrecao com mau cheiro", "corrimento com mau cheiro",
+    "caroco doloroso",
+    # Vomito persistente / desidratacao
+    "nao consigo beber agua", "nao consigo reter liquido",
+    "vomitando sem parar",
+    # Inchaco subito de membro (risco de trombose), comum apos inicio de
+    # hormonio/anticoncepcional
+    "perna inchou", "perna inchada", "inchaco na perna",
+    # Pedido direto de ambulancia ou de saber se e uma emergencia em curso
+    "chamar uma ambulancia", "pedir uma ambulancia", "enquanto peco ajuda",
 ]
 
 # AGENTS.md, Secao 6 trata "gestante com dor, sangramento ou perda de
@@ -78,6 +111,19 @@ PALAVRAS_SINTOMA_GESTACIONAL = ["dor", "sangr", "líquido", "liquido", "bolsa"]
 def _e_gestante_com_sintoma(msg: str) -> bool:
     return any(g in msg for g in PALAVRAS_GESTACAO) and any(
         s in msg for s in PALAVRAS_SINTOMA_GESTACIONAL
+    )
+
+
+# Overdose acidental (ex.: "tomei uma dose maior do remedio sem querer"):
+# combinacao de uma palavra de medicacao/dose com uma expressao de acidente,
+# em vez de frase fixa, para cobrir variacoes naturais do relato.
+PALAVRAS_MEDICACAO_DOSE = ["dose", "remedio", "comprimido", "medicamento"]
+PALAVRAS_ACIDENTE = ["sem querer", "por engano", "errado", "a mais", "demais"]
+
+
+def _e_overdose_acidental(msg: str) -> bool:
+    return any(m in msg for m in PALAVRAS_MEDICACAO_DOSE) and any(
+        a in msg for a in PALAVRAS_ACIDENTE
     )
 
 
@@ -102,6 +148,16 @@ SINAIS_AUTOAGRESSAO = [
     "não aguento mais viver", "nao aguento mais viver",
     "quero acabar com tudo", "não quero mais viver", "nao quero mais viver",
     "me machucar", "vou me machucar", "pensando em me machucar",
+    # Relato de violencia sexual ou domestica: tratado pela mesma via de
+    # encaminhamento humano imediato (nao ha, hoje, mensagem clinica
+    # especifica em AGENTS.md para este cenario - ver MENSAGEM_AUTOAGRESSAO
+    # abaixo, que cobre ambos os casos citando CVV e Central de Atendimento
+    # a Mulher). Comparado apenas contra texto sem acentos.
+    "violencia sexual", "abuso sexual", "abusada sexualmente",
+    "abusado sexualmente", "fui estuprada", "fui estuprado",
+    "assedio sexual", "fui forcada a", "forcada a ter relacao",
+    "nao estou segura em casa", "risco dentro de casa",
+    "nao me sinto segura em casa",
 ]
 
 MENSAGEM_AUTOAGRESSAO = (
@@ -109,7 +165,9 @@ MENSAGEM_AUTOAGRESSAO = (
     "sentindo é importante e merece cuidado. Vou encaminhar agora mesmo "
     "seu atendimento para nossa equipe humana. Se você estiver em risco "
     "imediato ou precisar conversar com alguém agora, também pode ligar "
-    "para o CVV (188), gratuito, sigiloso e disponível 24 horas por dia."
+    "para o CVV (188) ou, em casos de violência, para a Central de "
+    "Atendimento à Mulher (180) — ambos gratuitos, sigilosos e "
+    "disponíveis 24 horas por dia."
 )
 
 
@@ -121,6 +179,11 @@ def decidir(mensagem: str) -> dict:
     # em "quanto custa a consulta?" - sem essa ordem, a segunda seria
     # classificada erroneamente como pedido de agendamento.
     msg = mensagem.lower().strip()
+    # Versao sem acentos usada apenas para o casamento de palavras-chave dos
+    # sinais de alarme/autoagressao (ver _sem_acentos acima): torna a deteccao
+    # resiliente a mensagens digitadas sem acento, sem exigir manter duas
+    # variantes (com/sem acento) de cada nova palavra-chave adicionada aqui.
+    msg_ascii = _sem_acentos(msg)
 
     # Sinais de alarme clinicos e risco de autoagressao vem antes de
     # qualquer outra classificacao (inclusive "humano") porque precisam
@@ -128,17 +191,18 @@ def decidir(mensagem: str) -> dict:
     # de encaminhamento - e porque a regra da clinica e interromper
     # IMEDIATAMENTE qualquer outro fluxo quando presentes.
     if (
-        any(x in msg for x in SINAIS_DE_ALARME)
-        or _termo_proximo(msg, _SANGRAMENTO_BASE, _SANGRAMENTO_INTENSIDADE)
-        or _termo_proximo(msg, _DOR_BASE, _DOR_INTENSIDADE)
-        or _e_gestante_com_sintoma(msg)
+        any(x in msg_ascii for x in SINAIS_DE_ALARME)
+        or _termo_proximo(msg_ascii, _SANGRAMENTO_BASE, _SANGRAMENTO_INTENSIDADE)
+        or _termo_proximo(msg_ascii, _DOR_BASE, _DOR_INTENSIDADE)
+        or _e_gestante_com_sintoma(msg_ascii)
+        or _e_overdose_acidental(msg_ascii)
     ):
         return {
             "acao": "EMERGENCIA",
             "intencao": "sinal_de_alarme",
         }
 
-    if any(x in msg for x in SINAIS_AUTOAGRESSAO):
+    if any(x in msg_ascii for x in SINAIS_AUTOAGRESSAO):
         return {
             "acao": "AUTOAGRESSAO",
             "intencao": "risco_autoagressao",
