@@ -312,7 +312,19 @@ def responder(telefone: str, mensagem: str):
         )
 
     if conv.state == "aguardando_modalidade_nova":
-        tipo_consulta = identificar_servico(mensagem)
+        # A paciente pode ja ter indicado a modalidade na propria mensagem
+        # que virou "motivo" (ex: "na verdade quero consulta hibrida"),
+        # antes da ANA reperguntar "presencial, online ou hibrida?" aqui.
+        # Se a resposta a essa pergunta nao repetir a palavra-chave (ex:
+        # "quero agendar", "sim", "pode ser"), classificar so pela mensagem
+        # atual faz identificar_servico() cair no padrao "consulta_presencial"
+        # por omissao - perdendo a intencao ja explicitada e pulando a
+        # pergunta de qual etapa da hibrida agendar primeiro (ver
+        # Achado: paciente pede hibrida, ANA nunca pergunta presencial/
+        # online da 1a etapa e manda o link presencial direto). Por isso
+        # combinamos o motivo original com a resposta atual ao classificar.
+        motivo_original = conv.data.get("motivo", "")
+        tipo_consulta = identificar_servico(f"{motivo_original} {mensagem}")
         conv.update("tipo_consulta", tipo_consulta)
 
         if tipo_consulta == "consulta_hibrida":

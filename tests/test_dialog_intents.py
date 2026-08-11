@@ -143,3 +143,28 @@ def test_consulta_hibrida_nova_usa_link_presencial(monkeypatch, tmp_path):
 
     conv = conversation_module.Conversation(telefone)
     assert conv.data.get("tipo_consulta") == "consulta_hibrida"
+
+
+def test_hibrida_pedida_no_motivo_pergunta_qual_etapa_agendar_primeiro(
+    monkeypatch, tmp_path
+):
+    """Regressao de um caso real reportado: a paciente ja diz "quero consulta
+    hibrida" na propria mensagem de motivo. A ANA reperguntam "presencial,
+    online ou hibrida?" (fluxo generico) e a paciente responde so "quero
+    agendar", sem repetir a palavra "hibrida". Antes da correcao,
+    identificar_servico() classificava a resposta sozinha, caia no padrao
+    "consulta_presencial" e a ANA nunca perguntava se a 1a etapa da hibrida
+    seria presencial ou online - so mandava o link presencial direto."""
+    _isolar_conversas(monkeypatch, tmp_path)
+
+    telefone = "21988880010"
+
+    dialog_module.responder(telefone, "oi")
+    dialog_module.responder(telefone, "na verdade quero consulta hibrida")
+    resposta = dialog_module.responder(telefone, "quero agendar")
+
+    assert "presencial ou online" in resposta.lower()
+
+    conv = conversation_module.Conversation(telefone)
+    assert conv.data.get("tipo_consulta") == "consulta_hibrida"
+    assert conv.state == "aguardando_modalidade_hibrida"
