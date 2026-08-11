@@ -59,5 +59,23 @@
       "paciente_id": 68,
       "status": 208
     }
+  },
+  {
+    "timestamp": "2026-08-11T16:19:55.445770",
+    "agendamento_id": 31,
+    "tipo": "reserva_criada",
+    "dados": {
+      "paciente_id": 68,
+      "status": 208
+    }
+  },
+  {
+    "timestamp": "2026-08-11T16:21:39.079859",
+    "agendamento_id": 31,
+    "tipo": "reserva_criada",
+    "dados": {
+      "paciente_id": 68,
+      "status": 208
+    }
   }
 ]
