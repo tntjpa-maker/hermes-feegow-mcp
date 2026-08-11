@@ -1,3 +1,70 @@
+# Sinais de alarme clinicos (AGENTS.md, Secao 6): a clinica define que estes
+# sinais devem "interromper imediatamente qualquer atendimento comercial",
+# independente do que a paciente estava perguntando ou fazendo na conversa.
+# Antes desta lista, essa regra dependia inteiramente do LLM reconhecer o
+# sinal em texto livre e decidir agir - sem nenhuma rede de seguranca no
+# codigo caso o modelo (ou um fallback mais fraco, ver config.yaml) nao
+# generalizasse bem. Isto e uma camada adicional best-effort por
+# palavra-chave, cobrindo as formas mais diretas de relato - NAO substitui
+# o julgamento do LLM sobre casos ambiguos/informais nao listados aqui.
+SINAIS_DE_ALARME = [
+    # Sangramento intenso
+    "sangrando muito", "sangrando bastante", "sangrando demais",
+    "sangramento intenso", "sangramento muito forte", "hemorragia",
+    "encharcando um absorvente", "perdendo muito sangue",
+    # Dor intensa
+    "dor muito forte", "dor intensa", "dor insuportável", "dor insuportavel",
+    "dor forte demais", "dor muito intensa",
+    "dor forte e", "com dor forte",
+    # Febre importante
+    "febre alta", "febre importante", "febre muito alta",
+    # Desmaio
+    "desmaiei", "desmaiando", "vou desmaiar", "quase desmaiei", "desmaio",
+    # Falta de ar
+    "falta de ar", "não consigo respirar", "nao consigo respirar",
+    "dificuldade para respirar",
+    # Mal-estar importante
+    "mal-estar importante", "muito mal estar", "passando muito mal",
+    "passando mal",
+    # Piora rápida de sintomas
+    "piorando rápido", "piorando rapido", "piora rápida", "piora rapida",
+    # Gestante com dor, sangramento ou perda de líquido
+    "perdendo líquido", "perdendo liquido", "bolsa estourou",
+    "rompeu a bolsa", "bolsa rompeu",
+]
+
+MENSAGEM_URGENCIA = (
+    "Nosso atendimento é ambulatorial e não oferece suporte de urgência ou "
+    "emergência. Diante do que você está relatando, procure imediatamente "
+    "uma unidade de urgência para avaliação presencial. Não aguarde "
+    "resposta por aqui se os sintomas forem intensos ou estiverem "
+    "piorando."
+)
+
+# Sinais de risco de autoagressao/crise de saude mental. Nao ha, hoje, uma
+# mensagem oficial da clinica para este cenario especifico em AGENTS.md
+# (apenas a orientacao generica de encaminhar "situacao emocional delicada"
+# para humano) - a mensagem abaixo evita qualquer conteudo clinico/
+# institucional inventado, limitando-se a acolher, encaminhar para a
+# equipe humana e citar o CVV (188), um recurso publico, gratuito e
+# amplamente reconhecido no Brasil, nao uma politica da clinica.
+SINAIS_AUTOAGRESSAO = [
+    "pensamentos de morte", "pensamento de morte", "quero morrer",
+    "penso em morrer", "vou me matar", "quero me matar",
+    "não aguento mais viver", "nao aguento mais viver",
+    "quero acabar com tudo", "não quero mais viver", "nao quero mais viver",
+    "me machucar", "vou me machucar", "pensando em me machucar",
+]
+
+MENSAGEM_AUTOAGRESSAO = (
+    "Sinto muito que você esteja passando por isso — o que você está "
+    "sentindo é importante e merece cuidado. Vou encaminhar agora mesmo "
+    "seu atendimento para nossa equipe humana. Se você estiver em risco "
+    "imediato ou precisar conversar com alguém agora, também pode ligar "
+    "para o CVV (188), gratuito, sigiloso e disponível 24 horas por dia."
+)
+
+
 def decidir(mensagem: str) -> dict:
     # Ordem importa: intenções mais específicas (pedido de atendimento
     # humano, cancelamento, remarcação, perguntas informativas) são
@@ -6,6 +73,23 @@ def decidir(mensagem: str) -> dict:
     # em "quanto custa a consulta?" - sem essa ordem, a segunda seria
     # classificada erroneamente como pedido de agendamento.
     msg = mensagem.lower().strip()
+
+    # Sinais de alarme clinicos e risco de autoagressao vem antes de
+    # qualquer outra classificacao (inclusive "humano") porque precisam
+    # disparar a mensagem de seguranca especifica, nao a resposta generica
+    # de encaminhamento - e porque a regra da clinica e interromper
+    # IMEDIATAMENTE qualquer outro fluxo quando presentes.
+    if any(x in msg for x in SINAIS_DE_ALARME):
+        return {
+            "acao": "EMERGENCIA",
+            "intencao": "sinal_de_alarme",
+        }
+
+    if any(x in msg for x in SINAIS_AUTOAGRESSAO):
+        return {
+            "acao": "AUTOAGRESSAO",
+            "intencao": "risco_autoagressao",
+        }
 
     if any(x in msg for x in [
         "atendente",

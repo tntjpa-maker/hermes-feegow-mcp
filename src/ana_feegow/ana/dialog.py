@@ -1,7 +1,12 @@
 import logging
 
 from ana_feegow.ana.conversation import Conversation
-from ana_feegow.ana.decision import decidir, inferir_temperatura
+from ana_feegow.ana.decision import (
+    decidir,
+    inferir_temperatura,
+    MENSAGEM_AUTOAGRESSAO,
+    MENSAGEM_URGENCIA,
+)
 from ana_feegow.ana.knowledge import RESPOSTAS
 from ana_feegow.errors import FeegowError
 from ana_feegow.ana.service import identificar_servico
@@ -150,6 +155,23 @@ def responder(telefone: str, mensagem: str):
 
     acao = decidir(mensagem)
     intencao = acao.get("intencao")
+
+    # Sinais de alarme clinicos e risco de autoagressao (ver decision.py):
+    # tratados antes de qualquer outra logica, inclusive antes da
+    # sincronizacao com o Twenty e do pedido explicito de humano, porque a
+    # regra da clinica (AGENTS.md, Secao 6) e interromper IMEDIATAMENTE
+    # qualquer atendimento comercial em andamento. Nao alteramos
+    # conv.state: se a paciente continuar a conversa depois, o fluxo em
+    # andamento (se houver) continua de onde estava.
+    if acao.get("acao") == "EMERGENCIA":
+        notificar_equipe(telefone, mensagem, "Sinal de alarme clinico (urgencia)")
+        return MENSAGEM_URGENCIA
+
+    if acao.get("acao") == "AUTOAGRESSAO":
+        notificar_equipe(telefone, mensagem, "Risco de autoagressao/crise emocional")
+        conv.update("humano_ts", time.time())
+        conv.next("aguardando_humano")
+        return MENSAGEM_AUTOAGRESSAO
 
     _sincronizar_twenty(telefone, conv, intencao)
 
