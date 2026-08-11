@@ -1,3 +1,5 @@
+import re
+
 # Sinais de alarme clinicos (AGENTS.md, Secao 6): a clinica define que estes
 # sinais devem "interromper imediatamente qualquer atendimento comercial",
 # independente do que a paciente estava perguntando ou fazendo na conversa.
@@ -7,15 +9,42 @@
 # generalizasse bem. Isto e uma camada adicional best-effort por
 # palavra-chave, cobrindo as formas mais diretas de relato - NAO substitui
 # o julgamento do LLM sobre casos ambiguos/informais nao listados aqui.
+
+_JANELA_PROXIMIDADE = 20  # caracteres de folga entre o termo-base e o
+# qualificador de intensidade, para nao depender de frases EXATAS. Uma
+# paciente escrevendo "sangramento MUITO intenso" (com uma palavra no meio)
+# nao bateria com a frase fixa "sangramento intenso" - so com uma checagem
+# de proximidade como esta.
+
+
+def _termo_proximo(msg: str, base: str, qualificador: str, janela: int = _JANELA_PROXIMIDADE) -> bool:
+    """True se um termo que bate com o regex `base` aparece a ate `janela`
+    caracteres de um termo que bate com o regex `qualificador`, em qualquer
+    ordem."""
+    for m in re.finditer(base, msg):
+        inicio = max(0, m.start() - janela)
+        fim = min(len(msg), m.end() + janela)
+        if re.search(qualificador, msg[inicio:fim]):
+            return True
+    return False
+
+
+# Sangramento e dor sao verificados por proximidade (base + qualificador de
+# intensidade dentro de uma janela de caracteres) em vez de frases fixas,
+# porque sao as categorias mais propensas a variacao natural ("sangramento
+# MUITO intenso", "dor BEM forte"). As demais categorias abaixo (febre,
+# desmaio, falta de ar, mal-estar, piora) usam frases fixas porque sao, na
+# pratica, formas de relato mais estereotipadas/curtas, com baixo risco de
+# palavras intercaladas.
+_SANGRAMENTO_BASE = r"sangr\w*|sangue"
+_SANGRAMENTO_INTENSIDADE = r"muit\w*|intens\w*|fort\w*|demais|bastante"
+
+_DOR_BASE = r"\bdor\b"
+_DOR_INTENSIDADE = r"muit\w*|intens\w*|fort\w*|insuport[aá]vel|demais"
+
 SINAIS_DE_ALARME = [
-    # Sangramento intenso
-    "sangrando muito", "sangrando bastante", "sangrando demais",
-    "sangramento intenso", "sangramento muito forte", "hemorragia",
-    "encharcando um absorvente", "perdendo muito sangue",
-    # Dor intensa
-    "dor muito forte", "dor intensa", "dor insuportável", "dor insuportavel",
-    "dor forte demais", "dor muito intensa",
-    "dor forte e", "com dor forte",
+    # Sangramento e dor: ver _termo_proximo() acima, nao entram nesta lista.
+    "hemorragia", "encharcando um absorvente",
     # Febre importante
     "febre alta", "febre importante", "febre muito alta",
     # Desmaio
@@ -98,7 +127,12 @@ def decidir(mensagem: str) -> dict:
     # disparar a mensagem de seguranca especifica, nao a resposta generica
     # de encaminhamento - e porque a regra da clinica e interromper
     # IMEDIATAMENTE qualquer outro fluxo quando presentes.
-    if any(x in msg for x in SINAIS_DE_ALARME) or _e_gestante_com_sintoma(msg):
+    if (
+        any(x in msg for x in SINAIS_DE_ALARME)
+        or _termo_proximo(msg, _SANGRAMENTO_BASE, _SANGRAMENTO_INTENSIDADE)
+        or _termo_proximo(msg, _DOR_BASE, _DOR_INTENSIDADE)
+        or _e_gestante_com_sintoma(msg)
+    ):
         return {
             "acao": "EMERGENCIA",
             "intencao": "sinal_de_alarme",

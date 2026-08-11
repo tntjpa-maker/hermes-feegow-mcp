@@ -97,6 +97,56 @@ def test_gestante_com_sangramento_leve_tambem_dispara_alarme_mesmo_sem_intensida
     assert resposta == MENSAGEM_URGENCIA
 
 
+def test_sangramento_com_palavra_intercalada_dispara_alarme(monkeypatch, tmp_path):
+    """Regressao do Achado critico #2 do relatorio de testes de 30/07: a
+    frase original relatada pela paciente ('sangramento MUITO intenso', com
+    'muito' entre o substantivo e o qualificador) nao batia com a lista de
+    frases fixas original ('sangramento intenso') e escapava da rede de
+    seguranca. Ver _termo_proximo() em decision.py."""
+    _isolar_conversas(monkeypatch, tmp_path)
+    telefone = "21988880110"
+
+    resposta = dialog_module.responder(
+        telefone, "estou com um sangramento muito intenso agora, o que eu faço?"
+    )
+    assert resposta == MENSAGEM_URGENCIA
+
+
+def test_dor_com_palavra_intercalada_dispara_alarme(monkeypatch, tmp_path):
+    _isolar_conversas(monkeypatch, tmp_path)
+    telefone = "21988880111"
+
+    resposta = dialog_module.responder(telefone, "estou com uma dor bem forte na barriga")
+    assert resposta == MENSAGEM_URGENCIA
+
+
+def test_dor_leve_isolada_nao_dispara_alarme(monkeypatch, tmp_path):
+    """A checagem por proximidade nao deve virar um gatilho generico para
+    qualquer mencao a 'dor' - so quando ha um qualificador de intensidade
+    por perto."""
+    _isolar_conversas(monkeypatch, tmp_path)
+    telefone = "21988880112"
+
+    resposta = dialog_module.responder(telefone, "sinto uma dor leve, é normal?")
+    assert resposta != MENSAGEM_URGENCIA
+
+
+def test_dor_e_intensidade_distantes_no_texto_nao_disparam_falso_positivo(
+    monkeypatch, tmp_path
+):
+    """'dor' e uma palavra de intensidade presentes na mensagem, mas longe
+    uma da outra (fora da janela de proximidade) e sem relacao entre si, nao
+    devem disparar o alarme."""
+    _isolar_conversas(monkeypatch, tmp_path)
+    telefone = "21988880113"
+
+    resposta = dialog_module.responder(
+        telefone,
+        "tomo muito café todos os dias e por isso ontem tive uma dor de cabeça leve",
+    )
+    assert resposta != MENSAGEM_URGENCIA
+
+
 def test_gestacao_sem_sintoma_nao_dispara_alarme(monkeypatch, tmp_path):
     """Pergunta sobre gestacao sem relatar dor/sangramento/perda de liquido
     nao deve ser tratada como emergencia."""
