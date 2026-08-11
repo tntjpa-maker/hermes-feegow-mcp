@@ -82,6 +82,31 @@ def test_gestante_com_perda_de_liquido_dispara_mensagem_de_urgencia(
     assert resposta == MENSAGEM_URGENCIA
 
 
+def test_gestante_com_sangramento_leve_tambem_dispara_alarme_mesmo_sem_intensidade(
+    monkeypatch, tmp_path
+):
+    """AGENTS.md, Secao 6: para gestantes, dor/sangramento/perda de liquido
+    e sinal de alarme mesmo sem qualificador de intensidade - diferente
+    das demais categorias, que exigem 'intenso'/'muito'."""
+    _isolar_conversas(monkeypatch, tmp_path)
+    telefone = "21988880108"
+
+    resposta = dialog_module.responder(
+        telefone, "Tive sangramento no início da gravidez, o que faço?"
+    )
+    assert resposta == MENSAGEM_URGENCIA
+
+
+def test_gestacao_sem_sintoma_nao_dispara_alarme(monkeypatch, tmp_path):
+    """Pergunta sobre gestacao sem relatar dor/sangramento/perda de liquido
+    nao deve ser tratada como emergencia."""
+    _isolar_conversas(monkeypatch, tmp_path)
+    telefone = "21988880109"
+
+    resposta = dialog_module.responder(telefone, "Ela atende gestação de alto risco?")
+    assert resposta != MENSAGEM_URGENCIA
+
+
 def test_risco_de_autoagressao_encaminha_para_humano_com_mensagem_especifica(
     monkeypatch, tmp_path
 ):

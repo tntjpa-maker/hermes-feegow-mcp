@@ -33,6 +33,25 @@ SINAIS_DE_ALARME = [
     "rompeu a bolsa", "bolsa rompeu",
 ]
 
+# AGENTS.md, Secao 6 trata "gestante com dor, sangramento ou perda de
+# liquido" como sinal de alarme SEM exigir qualificador de intensidade
+# ("intenso"/"muito") - diferente das demais categorias acima, que exigem
+# intensidade. Uma gestante relatando qualquer dor ou sangramento (mesmo
+# leve em aparencia) e tratada como alarme por causa do risco obstetrico.
+# Verificado separadamente porque depende da combinacao de duas palavras
+# (contexto de gestacao + sintoma), nao de uma frase fixa.
+PALAVRAS_GESTACAO = [
+    "grávida", "gravida", "gestante", "gravidez", "gestação", "gestacao",
+]
+PALAVRAS_SINTOMA_GESTACIONAL = ["dor", "sangr", "líquido", "liquido", "bolsa"]
+
+
+def _e_gestante_com_sintoma(msg: str) -> bool:
+    return any(g in msg for g in PALAVRAS_GESTACAO) and any(
+        s in msg for s in PALAVRAS_SINTOMA_GESTACIONAL
+    )
+
+
 MENSAGEM_URGENCIA = (
     "Nosso atendimento é ambulatorial e não oferece suporte de urgência ou "
     "emergência. Diante do que você está relatando, procure imediatamente "
@@ -79,7 +98,7 @@ def decidir(mensagem: str) -> dict:
     # disparar a mensagem de seguranca especifica, nao a resposta generica
     # de encaminhamento - e porque a regra da clinica e interromper
     # IMEDIATAMENTE qualquer outro fluxo quando presentes.
-    if any(x in msg for x in SINAIS_DE_ALARME):
+    if any(x in msg for x in SINAIS_DE_ALARME) or _e_gestante_com_sintoma(msg):
         return {
             "acao": "EMERGENCIA",
             "intencao": "sinal_de_alarme",
