@@ -269,9 +269,37 @@ def test_expira_reserva_com_celular_dispara_mensagem_de_resgate(tmp_path, monkey
     ]
     assert len(chamadas) == 1
     chat_id, mensagem = chamadas[0]
-    assert chat_id == "21985929056@s.whatsapp.net"
+    assert chat_id == "5521985929056@s.whatsapp.net"
     assert "reserva expirou" in mensagem.lower()
     assert "novo link de agendamento" in mensagem.lower()
+
+
+def test_pagamento_expirado_normaliza_celular_sem_ddi(monkeypatch):
+    """Regressao: mesmo bug de DDI ausente encontrado em teste ao vivo em
+    producao (ver test_confirmacao_pagamento_normaliza_celular_sem_ddi em
+    test_pagbank_flow.py) tambem afetava a Fase 5. Garante que o celular e
+    normalizado para E.164 (com 55) antes de montar o chat_id, sem duplicar
+    o 55 quando ja vem completo."""
+    from ana_feegow.webhooks import expiracao as expiracao_module
+
+    chamadas = []
+    monkeypatch.setattr(
+        expiracao_module.dialog,
+        "notificar_paciente",
+        lambda chat_id, mensagem: chamadas.append(chat_id) or True,
+    )
+
+    expiracao_module._notificar_pagamento_expirado_best_effort(
+        {"celular": "21985929056", "opportunity_id": "opp-1"}
+    )
+    expiracao_module._notificar_pagamento_expirado_best_effort(
+        {"celular": "5521985929056", "opportunity_id": "opp-1"}
+    )
+
+    assert chamadas == [
+        "5521985929056@s.whatsapp.net",
+        "5521985929056@s.whatsapp.net",
+    ]
 
 
 def test_expira_reserva_sem_celular_nao_dispara_mensagem(tmp_path, monkeypatch):

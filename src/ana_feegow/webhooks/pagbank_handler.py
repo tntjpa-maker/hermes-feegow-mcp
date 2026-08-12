@@ -65,7 +65,8 @@ class PagBankHandler:
                 f"está agendada para {data_fmt} às {horario_fmt}. Qualquer "
                 "dúvida antes do dia, é só me chamar por aqui. Até breve!"
             )
-            chat_id = f"{celular}@s.whatsapp.net"
+            numero = twenty_service.normalizar_telefone_e164(celular).lstrip("+")
+            chat_id = f"{numero}@s.whatsapp.net"
             return dialog.notificar_paciente(chat_id, mensagem)
         except Exception:
             logger.exception(

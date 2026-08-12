@@ -524,10 +524,48 @@ def test_pagamento_confirmado_notifica_paciente_por_whatsapp(tmp_path, monkeypat
     assert result["status"] == "processed"
     assert len(chamadas) == 1
     chat_id, mensagem = chamadas[0]
-    assert chat_id == "21985929056@s.whatsapp.net"
+    assert chat_id == "5521985929056@s.whatsapp.net"
     assert "pagamento foi confirmado" in mensagem.lower()
     assert "29/07/2026" in mensagem
     assert "09:00" in mensagem
+
+
+def test_confirmacao_pagamento_normaliza_celular_sem_ddi(monkeypatch):
+    """Regressao: um bug real foi encontrado em teste ao vivo em producao -
+    o celular do Cal.com normalmente vem sem o DDI 55 (so DDD+numero), e o
+    chat_id era montado direto com esse valor cru, entao a mensagem nunca
+    chegava de verdade no WhatsApp (a chamada ao bridge nao lancava excecao,
+    mas o numero de destino era invalido). Aqui garantimos que o celular e
+    sempre normalizado para E.164 (com 55) antes de montar o chat_id -
+    tanto quando falta o DDI quanto quando ja vem completo (nao pode
+    duplicar o 55)."""
+    import ana_feegow.webhooks.pagbank_handler as pagbank_handler_module
+    from ana_feegow.webhooks.cal_parser import CalBooking
+
+    chamadas = []
+    monkeypatch.setattr(
+        pagbank_handler_module.dialog,
+        "notificar_paciente",
+        lambda chat_id, mensagem: chamadas.append(chat_id) or True,
+    )
+
+    base = dict(
+        uid="uid-x", booking_id=1, event_type_id=7, tipo_consulta="consulta",
+        data="2026-07-29", horario="09:00:00", nome="Paciente Teste",
+        email="p@example.com", cpf="", nascimento="", notas="",
+        opportunity_id="opp-1",
+    )
+    pagbank_handler_module.PagBankHandler._notificar_confirmacao_pagamento(
+        CalBooking(**base, celular="21985929056")
+    )
+    pagbank_handler_module.PagBankHandler._notificar_confirmacao_pagamento(
+        CalBooking(**base, celular="5521985929056")
+    )
+
+    assert chamadas == [
+        "5521985929056@s.whatsapp.net",
+        "5521985929056@s.whatsapp.net",
+    ]
 
 
 def test_falha_no_envio_de_whatsapp_nao_derruba_confirmacao_do_pagamento(tmp_path, monkeypatch):

@@ -78,7 +78,8 @@ def _notificar_pagamento_expirado_best_effort(booking: dict) -> bool:
         )
         return False
     try:
-        chat_id = f"{celular}@s.whatsapp.net"
+        numero = twenty_service.normalizar_telefone_e164(celular).lstrip("+")
+        chat_id = f"{numero}@s.whatsapp.net"
         return dialog.notificar_paciente(chat_id, MENSAGEM_PAGAMENTO_EXPIRADO)
     except Exception:
         logger.exception(
