@@ -1,8 +1,13 @@
 import hashlib
 import json
+import logging
+from datetime import datetime
 
 from ana_feegow.webhooks.cal_parser import CalBooking
 from ana_feegow.services import twenty_service
+from ana_feegow.ana import dialog
+
+logger = logging.getLogger("webhooks")
 
 RESERVA_INDISPONIVEL_PARA_PAGAMENTO = {"CANCELED", "EXPIRED", "REPLACED", "EXPIRING", "PROCESSING"}
 
@@ -35,6 +40,39 @@ class PagBankHandler:
             or (payload.get("order") or {}).get("reference_id")
             or ""
         )
+
+    @staticmethod
+    def _notificar_confirmacao_pagamento(booking: "CalBooking") -> bool:
+        """Fase 3 do funil de resgate: avisa a paciente por WhatsApp assim
+        que o pagamento e confirmado e a consulta e criada no Feegow -
+        substitui/complementa o e-mail de confirmacao (email_client), que
+        hoje esta desativado em producao por falta de SMTP configurado.
+        Best effort: qualquer falha e apenas logada e retorna False -
+        nunca interrompe o processamento do webhook do PagBank."""
+        celular = str(booking.celular or "")
+        if not celular:
+            logger.warning(
+                "Confirmacao de pagamento: sem celular no booking (uid=%s); "
+                "mensagem nao enviada.",
+                booking.uid,
+            )
+            return False
+        try:
+            data_fmt = datetime.strptime(booking.data, "%Y-%m-%d").strftime("%d/%m/%Y")
+            horario_fmt = str(booking.horario)[:5]
+            mensagem = (
+                "Ótima notícia! Seu pagamento foi confirmado e sua consulta "
+                f"está agendada para {data_fmt} às {horario_fmt}. Qualquer "
+                "dúvida antes do dia, é só me chamar por aqui. Até breve!"
+            )
+            chat_id = f"{celular}@s.whatsapp.net"
+            return dialog.notificar_paciente(chat_id, mensagem)
+        except Exception:
+            logger.exception(
+                "Falha ao notificar paciente sobre pagamento confirmado (uid=%s)",
+                booking.uid,
+            )
+            return False
 
     @staticmethod
     def charge_id(payload: dict) -> str:
@@ -154,6 +192,7 @@ class PagBankHandler:
         self.store.mark_event(key, "PAGBANK_PAID", uid)
         if self.email_client is not None:
             self.email_client.enviar_confirmacao_pagamento(booking, payload)
+        self._notificar_confirmacao_pagamento(booking)
         return {
             "status": "processed",
             "payment_status": status,

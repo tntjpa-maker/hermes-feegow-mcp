@@ -480,6 +480,42 @@ def registrar_origem_lead(opportunity_id: str, origem: str) -> None:
         )
 
 
+def registrar_origem_lead_texto_livre(opportunity_id: str, person_id: str, texto: str) -> None:
+    """Guarda a resposta literal da paciente a pergunta 'como conheceu a
+    Dra. Thalita' como uma Nota no Twenty (mesmo padrao de duas chamadas -
+    criar nota, depois noteTargets - usado por registrar_link_enviado),
+    alem da categoria ja classificada por registrar_origem_lead(). A
+    categoria (Instagram/Indicacao/Google/Outro) serve para filtros e
+    relatorios agregados; o texto literal fica disponivel na timeline da
+    oportunidade/pessoa para uso em direcionamento de campanhas de
+    marketing - ex.: identificar qual pessoa ou post especifico indicou,
+    quais termos de busca foram usados etc., informacao que a categoria
+    sozinha nao carrega. Best effort - qualquer falha e apenas logada,
+    nunca levanta."""
+    if not _configurado() or not opportunity_id or not (texto or "").strip():
+        return
+    try:
+        nota = _post(
+            "/rest/notes",
+            {
+                "title": "Como conheceu a Dra. Thalita (resposta original)",
+                "bodyV2": {"markdown": texto.strip()},
+            },
+        )
+        note_id = nota.get("data", {}).get("createNote", {}).get("id")
+        if note_id:
+            target = {"noteId": note_id, "targetOpportunityId": opportunity_id}
+            if person_id:
+                target["targetPersonId"] = person_id
+            _post("/rest/noteTargets", target)
+    except Exception:
+        logger.exception(
+            "Falha ao registrar texto livre da origem do lead (Twenty) para "
+            "opportunity_id=%s",
+            opportunity_id,
+        )
+
+
 
 def listar_oportunidades_link_enviado_para_followup(minutos: int = 60):
     """Varre oportunidades no estagio 'Link de agendamento enviado' cujo

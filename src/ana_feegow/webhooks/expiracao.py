@@ -7,6 +7,31 @@ logger = logging.getLogger("webhooks")
 
 MOTIVO_PADRAO = "Sinal não pago dentro do prazo de 30 minutos."
 
+# Fase 4 do funil de resgate: disparada quando a oportunidade e marcada
+# 'Atendimento realizado'. Reaproveita o mesmo texto/link ja usado como
+# resposta reativa quando a paciente pergunta sobre avaliacoes (ver
+# RESPOSTAS["avaliacoes"] em knowledge.py) - aqui e enviado de forma
+# proativa, pedindo a avaliacao no Doctoralia (o resultado fica hospedado
+# la, nao ha necessidade de guardar nada no nosso lado).
+MENSAGEM_PESQUISA_SATISFACAO = (
+    "Oi, tudo bem? Gostaríamos muito da sua opinião sobre o nosso "
+    "atendimento! Leva alguns segundos, é só clicar aqui: \n\n"
+    "https://www.doctoralia.com.br/adicionar-opiniao/thalita-menezes-2#/opiniao\n\n"
+    "Obrigada por nos escolher! 🌸"
+)
+
+# Fase 5 do funil de resgate: disparada apenas quando a reserva expira
+# automaticamente por falta de pagamento (PAGAMENTO_EXPIRADO) - por
+# decisao do produto, os demais motivos de perda (cancelamento pela
+# propria paciente, preco, decidiu por outro profissional etc.) NAO
+# disparam esta mensagem, para nao soar inconveniente em situacoes onde
+# a paciente ja deixou claro que nao tem mais interesse.
+MENSAGEM_PAGAMENTO_EXPIRADO = (
+    "Notei que sua reserva expirou porque o pagamento não foi concluído a "
+    "tempo. Ainda posso te ajudar a encontrar um novo horário? É só me "
+    "avisar por aqui que já te mando um novo link de agendamento."
+)
+
 
 def _notificar_paciente_best_effort(oportunidade: dict, mensagem: str) -> bool:
     """Resolve o WhatsApp da paciente dona da oportunidade (via pointOfContact
@@ -31,6 +56,35 @@ def _notificar_paciente_best_effort(oportunidade: dict, mensagem: str) -> bool:
         logger.exception(
             "Falha ao notificar paciente via WhatsApp para opportunity_id=%s",
             opportunity_id,
+        )
+        return False
+
+
+def _notificar_pagamento_expirado_best_effort(booking: dict) -> bool:
+    """Fase 5 do funil de recuperacao: avisa a paciente por WhatsApp quando
+    a reserva expira automaticamente por falta de pagamento. Diferente dos
+    checkpoints de link/reserva pendente (que so tem o id da oportunidade e
+    precisam ir ao Twenty buscar o telefone), aqui o booking local ja tem o
+    celular coletado no formulario do Cal.com - entao resolvemos o numero
+    direto, sem chamada extra. Best effort: qualquer falha e apenas
+    logada e retorna False - nunca interrompe a expiracao da reserva."""
+    booking = booking or {}
+    celular = str(booking.get("celular") or "")
+    if not celular:
+        logger.warning(
+            "Expiracao de reserva: sem celular no booking para "
+            "opportunity_id=%s; mensagem de resgate nao enviada.",
+            booking.get("opportunity_id"),
+        )
+        return False
+    try:
+        chat_id = f"{celular}@s.whatsapp.net"
+        return dialog.notificar_paciente(chat_id, MENSAGEM_PAGAMENTO_EXPIRADO)
+    except Exception:
+        logger.exception(
+            "Falha ao notificar paciente sobre pagamento expirado "
+            "(opportunity_id=%s)",
+            booking.get("opportunity_id"),
         )
         return False
 
@@ -72,8 +126,11 @@ def expirar_reservas_pendentes(store, calcom_client, minutos: int = 30, motivo: 
             pending["booking"].get("opportunity_id", ""),
             "PAGAMENTO_EXPIRADO",
         )
+        whatsapp_enviado = _notificar_pagamento_expirado_best_effort(pending["booking"])
         logger.info("Reserva %s expirou sem pagamento e foi cancelada no Cal.com.", uid)
-        processadas.append({"uid": uid, "status": "expirado"})
+        processadas.append(
+            {"uid": uid, "status": "expirado", "whatsapp_enviado": whatsapp_enviado}
+        )
 
     return processadas
 
@@ -89,7 +146,16 @@ def concluir_atendimentos_realizados(buffer_horas: int = 2):
         if not opportunity_id:
             continue
         twenty_service.registrar_atendimento_realizado(opportunity_id)
-        processadas.append({"opportunity_id": opportunity_id, "status": "concluido"})
+        whatsapp_enviado = _notificar_paciente_best_effort(
+            oportunidade, MENSAGEM_PESQUISA_SATISFACAO
+        )
+        processadas.append(
+            {
+                "opportunity_id": opportunity_id,
+                "status": "concluido",
+                "whatsapp_enviado": whatsapp_enviado,
+            }
+        )
     return processadas
 
 

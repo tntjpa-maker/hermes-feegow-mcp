@@ -370,6 +370,13 @@ def responder(telefone: str, mensagem: str):
         if opportunity_id:
             try:
                 twenty_service.registrar_origem_lead(opportunity_id, origem)
+                # Alem da categoria, guarda a resposta literal da paciente
+                # como Nota - dado usado para direcionamento de campanhas
+                # de marketing (ver decisao do produto: a categoria sozinha
+                # nao carrega detalhe suficiente para isso).
+                twenty_service.registrar_origem_lead_texto_livre(
+                    opportunity_id, conv.data.get("twenty_person_id"), mensagem
+                )
             except Exception:
                 logger.exception(
                     "Falha ao registrar origem do lead (best effort) para "

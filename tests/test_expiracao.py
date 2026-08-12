@@ -5,7 +5,10 @@ from fastapi.testclient import TestClient
 
 from ana_feegow.webhooks.app import create_app
 from ana_feegow.webhooks.calcom_client import CalComClient
-from ana_feegow.webhooks.expiracao import expirar_reservas_pendentes
+from ana_feegow.webhooks.expiracao import (
+    concluir_atendimentos_realizados,
+    expirar_reservas_pendentes,
+)
 from ana_feegow.webhooks.sync_store import SyncStore
 
 
@@ -138,7 +141,9 @@ def test_expira_reserva_vencida_e_marca_expired(tmp_path):
     calcom = FakeCalComClient()
     resultado = expirar_reservas_pendentes(store, calcom, minutos=30)
 
-    assert resultado == [{"uid": "uid-1", "status": "expirado"}]
+    assert resultado == [
+        {"uid": "uid-1", "status": "expirado", "whatsapp_enviado": False}
+    ]
     assert calcom.cancelamentos == [("uid-1", expirar_reservas_pendentes.__globals__["MOTIVO_PADRAO"])]
     assert store.get_pending_booking("uid-1")["payment_status"] == "EXPIRED"
 
@@ -228,6 +233,108 @@ def test_expira_nao_afeta_reservas_recentes(tmp_path):
 
     assert resultado == []
     assert store.get_pending_booking("uid-1")["payment_status"] == "WAITING"
+
+
+@dataclass(frozen=True)
+class FakeBookingComCelular:
+    uid: str
+    booking_id: int
+    celular: str
+    opportunity_id: str = "opp-1"
+
+
+def test_expira_reserva_com_celular_dispara_mensagem_de_resgate(tmp_path, monkeypatch):
+    from ana_feegow.webhooks import expiracao as expiracao_module
+
+    store = SyncStore(str(tmp_path / "sync.db"))
+    store.save_pending_booking(
+        FakeBookingComCelular("uid-1", 1, celular="21985929056"),
+        "CHEC_1",
+        "https://pay/1",
+    )
+    _envelhecer_pending(store, "uid-1", 31)
+
+    chamadas = []
+    monkeypatch.setattr(
+        expiracao_module.dialog,
+        "notificar_paciente",
+        lambda chat_id, mensagem: chamadas.append((chat_id, mensagem)) or True,
+    )
+
+    calcom = FakeCalComClient()
+    resultado = expirar_reservas_pendentes(store, calcom, minutos=30)
+
+    assert resultado == [
+        {"uid": "uid-1", "status": "expirado", "whatsapp_enviado": True}
+    ]
+    assert len(chamadas) == 1
+    chat_id, mensagem = chamadas[0]
+    assert chat_id == "21985929056@s.whatsapp.net"
+    assert "reserva expirou" in mensagem.lower()
+    assert "novo link de agendamento" in mensagem.lower()
+
+
+def test_expira_reserva_sem_celular_nao_dispara_mensagem(tmp_path, monkeypatch):
+    from ana_feegow.webhooks import expiracao as expiracao_module
+
+    store = SyncStore(str(tmp_path / "sync.db"))
+    store.save_pending_booking(FakeBooking("uid-1", 1), "CHEC_1", "https://pay/1")
+    _envelhecer_pending(store, "uid-1", 31)
+
+    chamou = []
+    monkeypatch.setattr(
+        expiracao_module.dialog,
+        "notificar_paciente",
+        lambda *a, **k: chamou.append(True) or True,
+    )
+
+    calcom = FakeCalComClient()
+    resultado = expirar_reservas_pendentes(store, calcom, minutos=30)
+
+    assert resultado == [
+        {"uid": "uid-1", "status": "expirado", "whatsapp_enviado": False}
+    ]
+    assert chamou == []
+
+
+def test_concluir_atendimentos_realizados_envia_link_doctoralia(monkeypatch):
+    from ana_feegow.webhooks import expiracao as expiracao_module
+    from ana_feegow.services import twenty_service as twenty_service_module
+
+    oportunidade = {"id": "opp-1", "pointOfContactId": "person-1"}
+    monkeypatch.setattr(
+        twenty_service_module,
+        "listar_oportunidades_para_concluir",
+        lambda buffer_horas: [oportunidade],
+    )
+    marcadas = []
+    monkeypatch.setattr(
+        twenty_service_module,
+        "registrar_atendimento_realizado",
+        lambda opportunity_id: marcadas.append(opportunity_id),
+    )
+    monkeypatch.setattr(
+        twenty_service_module,
+        "numero_whatsapp_da_oportunidade",
+        lambda oport: "21985929056",
+    )
+    chamadas = []
+    monkeypatch.setattr(
+        expiracao_module.dialog,
+        "notificar_paciente",
+        lambda chat_id, mensagem: chamadas.append((chat_id, mensagem)) or True,
+    )
+
+    resultado = concluir_atendimentos_realizados(buffer_horas=2)
+
+    assert marcadas == ["opp-1"]
+    assert resultado == [
+        {"opportunity_id": "opp-1", "status": "concluido", "whatsapp_enviado": True}
+    ]
+    assert len(chamadas) == 1
+    chat_id, mensagem = chamadas[0]
+    assert chat_id == "21985929056@s.whatsapp.net"
+    assert "doctoralia.com.br/adicionar-opiniao" in mensagem
 
 
 class FakeHandler:

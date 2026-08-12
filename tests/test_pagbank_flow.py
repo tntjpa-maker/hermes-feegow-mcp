@@ -497,6 +497,67 @@ def test_falha_no_envio_de_email_nao_derruba_confirmacao_do_pagamento(tmp_path):
     assert store.get_mapping("cal-uid-pagbank-1")["feegow_appointment_id"] == 54
 
 
+def test_pagamento_confirmado_notifica_paciente_por_whatsapp(tmp_path, monkeypatch):
+    import ana_feegow.webhooks.pagbank_handler as pagbank_handler_module
+
+    store = SyncStore(str(tmp_path / "sync.db"))
+    booking = parse_booking(cal_payload())
+    store.save_pending_booking(booking, "CHEC_123", "https://sandbox.pagbank.test/pay")
+
+    feegow = FakeFeegow()
+    handler = PagBankHandler(store, feegow)
+
+    chamadas = []
+    monkeypatch.setattr(
+        pagbank_handler_module.dialog,
+        "notificar_paciente",
+        lambda chat_id, mensagem: chamadas.append((chat_id, mensagem)) or True,
+    )
+
+    notification = {
+        "id": "ORDE_123",
+        "reference_id": "cal-uid-pagbank-1",
+        "charges": [{"id": "CHAR_123", "status": "PAID"}],
+    }
+    result = handler.handle(notification)
+
+    assert result["status"] == "processed"
+    assert len(chamadas) == 1
+    chat_id, mensagem = chamadas[0]
+    assert chat_id == "21985929056@s.whatsapp.net"
+    assert "pagamento foi confirmado" in mensagem.lower()
+    assert "29/07/2026" in mensagem
+    assert "09:00" in mensagem
+
+
+def test_falha_no_envio_de_whatsapp_nao_derruba_confirmacao_do_pagamento(tmp_path, monkeypatch):
+    import ana_feegow.webhooks.pagbank_handler as pagbank_handler_module
+
+    store = SyncStore(str(tmp_path / "sync.db"))
+    booking = parse_booking(cal_payload())
+    store.save_pending_booking(booking, "CHEC_123", "https://sandbox.pagbank.test/pay")
+
+    feegow = FakeFeegow()
+    handler = PagBankHandler(store, feegow)
+
+    def notificar_com_erro(chat_id, mensagem):
+        raise RuntimeError("bridge do WhatsApp fora do ar (simulado)")
+
+    monkeypatch.setattr(
+        pagbank_handler_module.dialog, "notificar_paciente", notificar_com_erro
+    )
+
+    notification = {
+        "id": "ORDE_123",
+        "reference_id": "cal-uid-pagbank-1",
+        "charges": [{"id": "CHAR_123", "status": "PAID"}],
+    }
+    result = handler.handle(notification)
+
+    assert result["status"] == "processed"
+    assert feegow.created == 1
+
+
 def test_create_checkout_aceita_cpf_de_teste_oficial_do_pagbank(tmp_path):
     # 01234567890 é o CPF de teste recomendado pela documentação do
     # PagBank para o ambiente Sandbox - precisa continuar passando.
