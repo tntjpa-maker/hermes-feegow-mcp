@@ -1,6 +1,9 @@
 from typing import Optional
 
 from ana_feegow.client import FeegowClient
+from ana_feegow.tools.identify import identificar_paciente
+
+PAGE_SIZE = 200
 
 
 def buscar_paciente(
@@ -11,12 +14,23 @@ def buscar_paciente(
 ):
     client = client or FeegowClient()
 
+    if telefone:
+        # IMPORTANTE: GET /patient/list ignora o filtro "celular" na
+        # prática (confirmado manualmente contra a API real em 28/07/2026)
+        # - sem essa checagem no cliente, esta função (usada como fallback
+        # de identificação em FeegowSyncService.ensure_patient) devolveria
+        # o primeiro paciente da listagem padrão do Feegow, vinculando o
+        # agendamento a uma pessoa completamente diferente. Reaproveita a
+        # mesma lógica, já corrigida, de identificar_paciente().
+        resultado = identificar_paciente(telefone, client=client)
+        if resultado["existe"]:
+            return {"total": 1, "content": [resultado["paciente"]]}
+        return {"total": 0, "content": []}
+
     params = {}
 
     if cpf:
         params["cpf"] = cpf
-    elif telefone:
-        params["celular"] = telefone
     elif nome:
         params["nome"] = nome
     else:
