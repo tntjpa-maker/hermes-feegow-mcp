@@ -205,14 +205,19 @@ def test_primeira_consulta_nao_aciona_checagem_de_retorno(monkeypatch, tmp_path)
     resposta = dialog_module.responder(telefone, "primeira consulta")
 
     assert chamado == []
+    assert "presencial, online ou híbrida" in resposta.lower()
+
+    resposta = dialog_module.responder(telefone, "presencial")
+    assert "como você conheceu" in resposta.lower()
+
+    resposta = dialog_module.responder(telefone, "Google")
     # Consulta nova (não é retorno): a ANA não pergunta data nem horário -
-    # ela envia direto o link do Cal.com correspondente.
+    # ela envia o link do Cal.com depois de confirmar modalidade e origem.
     assert "dia você prefere" not in resposta.lower()
     assert "https://cal.magnoliasdm.com.br/drathalita/niteroi" in resposta
 
     conv = conversation_module.Conversation(telefone)
     assert conv.state == "finalizado"
-
 
 def test_telefone_real_e_usado_na_checagem_de_elegibilidade_de_retorno(monkeypatch, tmp_path):
     # Regressão do bug em que o telefone da paciente ficava hardcoded

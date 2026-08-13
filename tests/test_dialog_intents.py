@@ -87,7 +87,12 @@ def test_consulta_presencial_nova_envia_link_presencial_e_explica_sinal(monkeypa
 
     dialog_module.responder(telefone, "oi")  # inicio -> aguardando_motivo
     resposta = dialog_module.responder(telefone, "quero marcar minha primeira consulta")
+    assert "presencial, online ou híbrida" in resposta.lower()
 
+    resposta = dialog_module.responder(telefone, "presencial")
+    assert "como você conheceu" in resposta.lower()
+
+    resposta = dialog_module.responder(telefone, "Google")
     assert "https://cal.magnoliasdm.com.br/drathalita/niteroi" in resposta
     assert "sinal de 20%" in resposta.lower()
     # A ANA nunca pergunta data nem horário - ela só envia o link do
@@ -99,7 +104,6 @@ def test_consulta_presencial_nova_envia_link_presencial_e_explica_sinal(monkeypa
     conv = conversation_module.Conversation(telefone)
     assert conv.state == "finalizado"
     assert conv.data.get("tipo_consulta") == "consulta_presencial"
-
 
 def test_consulta_online_nova_envia_link_online(monkeypatch, tmp_path):
     _isolar_conversas(monkeypatch, tmp_path)
@@ -114,36 +118,47 @@ def test_consulta_online_nova_envia_link_online(monkeypatch, tmp_path):
 
     dialog_module.responder(telefone, "oi")
     resposta = dialog_module.responder(telefone, "quero uma consulta online, primeira vez")
+    assert "presencial, online ou híbrida" in resposta.lower()
 
+    resposta = dialog_module.responder(telefone, "online")
+    assert "como você conheceu" in resposta.lower()
+
+    resposta = dialog_module.responder(telefone, "Instagram")
     assert "https://cal.magnoliasdm.com.br/drathalita/online" in resposta
 
     conv = conversation_module.Conversation(telefone)
     assert conv.state == "finalizado"
     assert conv.data.get("tipo_consulta") == "consulta_online"
 
-
 def test_consulta_hibrida_nova_usa_link_presencial(monkeypatch, tmp_path):
     _isolar_conversas(monkeypatch, tmp_path)
 
     monkeypatch.setattr(
         dialog_module,
-        "link_consulta_presencial",
-        lambda: "https://cal.magnoliasdm.com.br/drathalita/niteroi",
+        "link_consulta_hibrida_presencial",
+        lambda: "https://cal.magnoliasdm.com.br/drathalita/hibrida-presencial",
     )
 
     telefone = "21988880006"
 
     dialog_module.responder(telefone, "oi")
     resposta = dialog_module.responder(telefone, "quero a consulta hibrida, primeira vez")
+    assert "presencial, online ou híbrida" in resposta.lower()
 
-    # Híbrida não tem link de agenda próprio - é uma etiqueta de
-    # serviço/preço no Feegow (pacote presencial + online), então usa o
-    # mesmo link presencial.
-    assert "https://cal.magnoliasdm.com.br/drathalita/niteroi" in resposta
+    resposta = dialog_module.responder(telefone, "híbrida")
+    assert "primeira etapa" in resposta.lower()
+    assert "presencial ou online" in resposta.lower()
+
+    resposta = dialog_module.responder(telefone, "presencial")
+    assert "como você conheceu" in resposta.lower()
+
+    resposta = dialog_module.responder(telefone, "Indicação")
+    assert "https://cal.magnoliasdm.com.br/drathalita/hibrida-presencial" in resposta
 
     conv = conversation_module.Conversation(telefone)
+    assert conv.state == "finalizado"
     assert conv.data.get("tipo_consulta") == "consulta_hibrida"
-
+    assert conv.data.get("hibrida_primeira_etapa") == "presencial"
 
 def test_hibrida_pedida_no_motivo_pergunta_qual_etapa_agendar_primeiro(
     monkeypatch, tmp_path
